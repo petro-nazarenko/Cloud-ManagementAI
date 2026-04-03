@@ -11,7 +11,6 @@
   "dependencies": {
     "@azure/arm-resources": "^5.2.0",
     "@azure/identity": "^4.13.1",
-    "@azure/identity": "^4.0.0",
     "@google-cloud/resource-manager": "^4.1.4",
     "aws-sdk": "^2.1509.0",
     "bcryptjs": "^2.4.3",

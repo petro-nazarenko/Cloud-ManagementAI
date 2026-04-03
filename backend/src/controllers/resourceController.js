@@ -1,6 +1,8 @@
 'use strict';
 
-const { v4: uuidv4 } = require('crypto').randomUUID ? { v4: () => require('crypto').randomUUID() } : { v4: () => `${Date.now()}-${Math.random().toString(36).slice(2)}` };
+const { randomUUID } = require('crypto');
+
+const uuidv4 = () => randomUUID();
 
 // In-memory resource store — replace with a real DB in production
 const resources = new Map();
