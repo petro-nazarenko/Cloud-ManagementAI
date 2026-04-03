@@ -1,5 +1,12 @@
 # Cloud ManagementAI
 
+[![CI](https://github.com/petro-nazarenko/Cloud-ManagementAI/actions/workflows/ci.yml/badge.svg)](https://github.com/petro-nazarenko/Cloud-ManagementAI/actions/workflows/ci.yml)
+[![Node.js](https://img.shields.io/badge/Node.js-20-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](https://reactjs.org/)
+[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
+[![Kubernetes](https://img.shields.io/badge/Kubernetes-Enabled-326CE5?logo=kubernetes&logoColor=white)](https://kubernetes.io/)
+[![Terraform](https://img.shields.io/badge/Terraform-IaC-7B42BC?logo=terraform&logoColor=white)](https://www.terraform.io/)
+
 Cloud ManagementAI is an AI-powered cloud management platform that provides a suite of tools for optimizing and automating cloud infrastructure across AWS, Azure, and Google Cloud Platform.
 
 ## Overview
