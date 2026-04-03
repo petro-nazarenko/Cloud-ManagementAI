@@ -1,0 +1,178 @@
+groups:
+  - name: infrastructure
+    interval: 30s
+    rules:
+      - alert: HighCPU
+        expr: |
+          100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High CPU utilization on {{ $labels.instance }}"
+          description: >-
+            CPU utilization on {{ $labels.instance }} has been above 85%
+            for more than 5 minutes. Current value: {{ $value | printf "%.1f" }}%.
+          runbook_url: https://wiki.example.com/runbooks/high-cpu
+
+      - alert: CriticalCPU
+        expr: |
+          100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 95
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Critical CPU utilization on {{ $labels.instance }}"
+          description: >-
+            CPU utilization on {{ $labels.instance }} is critically high at
+            {{ $value | printf "%.1f" }}%.
+          runbook_url: https://wiki.example.com/runbooks/critical-cpu
+
+      - alert: HighMemory
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High memory utilization on {{ $labels.instance }}"
+          description: >-
+            Memory utilization on {{ $labels.instance }} has been above 85%
+            for more than 5 minutes. Current value: {{ $value | printf "%.1f" }}%.
+          runbook_url: https://wiki.example.com/runbooks/high-memory
+
+      - alert: CriticalMemory
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 95
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Critical memory utilization on {{ $labels.instance }}"
+          description: >-
+            Memory utilization on {{ $labels.instance }} is critically high at
+            {{ $value | printf "%.1f" }}%.
+          runbook_url: https://wiki.example.com/runbooks/critical-memory
+
+      - alert: DiskSpaceLow
+        expr: |
+          (node_filesystem_avail_bytes{fstype!~"tmpfs|fuse.lxcfs"} /
+           node_filesystem_size_bytes{fstype!~"tmpfs|fuse.lxcfs"}) * 100 < 15
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Low disk space on {{ $labels.instance }} ({{ $labels.mountpoint }})"
+          description: >-
+            Disk usage on {{ $labels.instance }}:{{ $labels.mountpoint }} is above 85%.
+            Available: {{ $value | printf "%.1f" }}%.
+
+  - name: application
+    interval: 30s
+    rules:
+      - alert: BackendDown
+        expr: up{job="backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Backend service is unreachable"
+          description: >-
+            The backend service has been unreachable for more than 1 minute.
+            Target: {{ $labels.instance }}.
+          runbook_url: https://wiki.example.com/runbooks/backend-down
+
+      - alert: HighErrorRate
+        expr: |
+          (
+            rate(http_requests_total{job="backend", status=~"5.."}[5m])
+            /
+            rate(http_requests_total{job="backend"}[5m])
+          ) * 100 > 5
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "High HTTP 5xx error rate on backend"
+          description: >-
+            Backend HTTP error rate is {{ $value | printf "%.2f" }}% over the last 5 minutes,
+            which exceeds the 5% threshold.
+          runbook_url: https://wiki.example.com/runbooks/high-error-rate
+
+      - alert: SlowResponseTime
+        expr: |
+          histogram_quantile(0.95,
+            rate(http_request_duration_seconds_bucket{job="backend"}[5m])
+          ) > 2
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Slow API response times on backend"
+          description: >-
+            95th percentile response time is {{ $value | printf "%.2f" }}s, above the 2s threshold.
+          runbook_url: https://wiki.example.com/runbooks/slow-response
+
+      - alert: HighRequestVolume
+        expr: |
+          rate(http_requests_total{job="backend"}[5m]) > 1000
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Unusually high request volume on backend"
+          description: >-
+            Backend is receiving {{ $value | printf "%.0f" }} req/s, which may indicate
+            a traffic spike or DDoS attempt.
+
+  - name: containers
+    interval: 30s
+    rules:
+      - alert: ContainerHighCPU
+        expr: |
+          rate(container_cpu_usage_seconds_total{name!=""}[5m]) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Container {{ $labels.name }} high CPU usage"
+          description: >-
+            Container {{ $labels.name }} CPU usage is {{ $value | printf "%.1f" }}%.
+
+      - alert: ContainerHighMemory
+        expr: |
+          (container_memory_usage_bytes{name!=""} /
+           container_spec_memory_limit_bytes{name!=""}) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Container {{ $labels.name }} high memory usage"
+          description: >-
+            Container {{ $labels.name }} memory usage is {{ $value | printf "%.1f" }}%
+            of its limit.
+
+      - alert: ContainerRestarting
+        expr: |
+          rate(container_last_seen{name!=""}[15m]) > 0
+          and
+          changes(container_last_seen{name!=""}[15m]) > 3
+        for: 0m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Container {{ $labels.name }} is restarting frequently"
+          description: >-
+            Container {{ $labels.name }} has restarted more than 3 times in the last 15 minutes.

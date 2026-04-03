@@ -1,0 +1,187 @@
+---
+- name: Setup Kubernetes Tools and Deploy Manifests
+  hosts: k8s
+  become: true
+  gather_facts: true
+
+  vars:
+    kubectl_version: "1.29.3"
+    helm_version: "3.14.3"
+    kubeconfig_path: "{{ ansible_env.HOME }}/.kube/config"
+    manifests_dir: "{{ playbook_dir }}/../../../kubernetes"
+    namespace: cloud-management
+
+  tasks:
+    # ── Install kubectl ──────────────────────────────────────────────────────
+
+    - name: Check kubectl version
+      command: kubectl version --client --output=yaml
+      register: kubectl_check
+      changed_when: false
+      failed_when: false
+
+    - name: Download kubectl binary
+      get_url:
+        url: "https://dl.k8s.io/release/v{{ kubectl_version }}/bin/linux/amd64/kubectl"
+        dest: /usr/local/bin/kubectl
+        mode: "0755"
+        checksum: "sha256:https://dl.k8s.io/release/v{{ kubectl_version }}/bin/linux/amd64/kubectl.sha256"
+      when: kubectl_check.rc != 0 or kubectl_version not in (kubectl_check.stdout | default(''))
+
+    - name: Verify kubectl installation
+      command: kubectl version --client
+      changed_when: false
+
+    # ── Install Helm ─────────────────────────────────────────────────────────
+
+    - name: Check helm version
+      command: helm version --short
+      register: helm_check
+      changed_when: false
+      failed_when: false
+
+    - name: Download Helm installer
+      get_url:
+        url: "https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3"
+        dest: /tmp/get_helm.sh
+        mode: "0700"
+      when: helm_check.rc != 0 or helm_version not in (helm_check.stdout | default(''))
+
+    - name: Install Helm
+      command: /tmp/get_helm.sh --version "v{{ helm_version }}"
+      environment:
+        DESIRED_VERSION: "v{{ helm_version }}"
+      when: helm_check.rc != 0 or helm_version not in (helm_check.stdout | default(''))
+
+    - name: Verify Helm installation
+      command: helm version --short
+      changed_when: false
+
+    - name: Clean up Helm installer
+      file:
+        path: /tmp/get_helm.sh
+        state: absent
+
+    # ── Configure kubeconfig ─────────────────────────────────────────────────
+
+    - name: Create .kube directory
+      file:
+        path: "{{ ansible_env.HOME }}/.kube"
+        state: directory
+        mode: "0700"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+
+    - name: Copy kubeconfig
+      copy:
+        content: "{{ kubeconfig_content }}"
+        dest: "{{ kubeconfig_path }}"
+        mode: "0600"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+      when: kubeconfig_content is defined
+      no_log: true
+
+    - name: Test cluster connectivity
+      command: kubectl cluster-info
+      changed_when: false
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+
+    # ── Add Helm Repositories ────────────────────────────────────────────────
+
+    - name: Add ingress-nginx Helm repository
+      command: helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+      changed_when: false
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+
+    - name: Add cert-manager Helm repository
+      command: helm repo add jetstack https://charts.jetstack.io
+      changed_when: false
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+
+    - name: Update Helm repositories
+      command: helm repo update
+      changed_when: false
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+
+    # ── Install ingress-nginx ────────────────────────────────────────────────
+
+    - name: Install ingress-nginx
+      command: >
+        helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx
+        --namespace ingress-nginx
+        --create-namespace
+        --set controller.replicaCount=2
+        --set controller.metrics.enabled=true
+        --wait --timeout 5m
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      register: ingress_result
+      changed_when: "'already up to date' not in ingress_result.stdout"
+
+    # ── Apply Kubernetes Manifests ───────────────────────────────────────────
+
+    - name: Apply namespace manifest
+      command: kubectl apply -f "{{ manifests_dir }}/namespace.yaml"
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      changed_when: true
+
+    - name: Apply monitoring manifests
+      command: kubectl apply -f "{{ manifests_dir }}/monitoring/"
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      changed_when: true
+
+    - name: Apply backend manifests
+      command: kubectl apply -f "{{ manifests_dir }}/backend/"
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      changed_when: true
+
+    - name: Apply frontend manifests
+      command: kubectl apply -f "{{ manifests_dir }}/frontend/"
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      changed_when: true
+
+    - name: Apply ingress manifest
+      command: kubectl apply -f "{{ manifests_dir }}/ingress.yaml"
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      changed_when: true
+
+    # ── Verify Deployments ───────────────────────────────────────────────────
+
+    - name: Wait for backend deployment to be ready
+      command: >
+        kubectl rollout status deployment/backend
+        -n {{ namespace }}
+        --timeout=5m
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      changed_when: false
+
+    - name: Wait for frontend deployment to be ready
+      command: >
+        kubectl rollout status deployment/frontend
+        -n {{ namespace }}
+        --timeout=5m
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      changed_when: false
+
+    - name: List all pods in namespace
+      command: kubectl get pods -n "{{ namespace }}" -o wide
+      environment:
+        KUBECONFIG: "{{ kubeconfig_path }}"
+      changed_when: false
+      register: pod_list
+
+    - name: Display pod status
+      debug:
+        var: pod_list.stdout_lines
