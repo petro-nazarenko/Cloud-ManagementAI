@@ -8,6 +8,8 @@ const awsService = require('../services/awsService');
 const azureService = require('../services/azureService');
 const gcpService = require('../services/gcpService');
 const { checkProviderCredentials, healthCheckProviders } = require('../utils/providerHealth');
+const { enqueueProviderHealthRefresh, getAnalyticsJobStatus, getLatestJobResult } = require('../queue/analyticsQueue');
+const { JOB_NAMES } = require('../queue/jobNames');
 
 const router = Router();
 
@@ -64,8 +66,49 @@ router.get('/', (req, res) => {
 // GET /api/providers/health — perform live connectivity checks for all providers
 router.get('/health', authorizeRoles('admin', 'operator'), async (req, res, next) => {
   try {
+    const cached = await getLatestJobResult(JOB_NAMES.providerHealthRefresh);
+    if (cached) {
+      return res.json({
+        providers: cached.providers,
+        source: 'queued-cache',
+        refreshedAt: cached.refreshedAt || null,
+      });
+    }
+
     const results = await healthCheckProviders();
-    res.json({ providers: results });
+    res.json({ providers: results, source: 'fallback-live' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/providers/health/refresh — queue provider health refresh job
+router.post('/health/refresh', authorizeRoles('admin', 'operator'), async (req, res, next) => {
+  try {
+    const job = await enqueueProviderHealthRefresh({
+      userId: req.user.sub,
+      email: req.user.email,
+      role: req.user.role,
+    });
+
+    res.status(202).json({
+      message: 'Provider health refresh queued.',
+      job,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/providers/health/jobs/:jobId — provider health job status
+router.get('/health/jobs/:jobId', authorizeRoles('admin', 'operator'), async (req, res, next) => {
+  try {
+    const job = await getAnalyticsJobStatus(req.params.jobId);
+    if (!job || job.name !== JOB_NAMES.providerHealthRefresh) {
+      return res.status(404).json({ error: `Provider health job '${req.params.jobId}' not found.` });
+    }
+
+    res.json(job);
   } catch (err) {
     next(err);
   }

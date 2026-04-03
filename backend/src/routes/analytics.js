@@ -27,6 +27,9 @@ router.use(authenticate);
 // GET /api/analytics/costs — cost breakdown by provider, service, and time range
 router.get('/costs', analyticsController.getCosts);
 
+// POST /api/analytics/costs/refresh — queue cost sync job
+router.post('/costs/refresh', authorizeRoles('admin', 'operator'), analyticsController.queueCostSync);
+
 // GET /api/analytics/usage — resource utilisation metrics
 router.get('/usage', analyticsController.getUsage);
 

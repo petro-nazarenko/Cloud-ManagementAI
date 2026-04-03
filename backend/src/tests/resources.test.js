@@ -201,6 +201,7 @@ describe('Analytics API', () => {
   let token;
   let viewerToken;
   let queuedJobId;
+  let queuedCostJobId;
 
   beforeAll(() => {
     token = makeToken();
@@ -214,6 +215,30 @@ describe('Analytics API', () => {
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('grandTotal');
     expect(res.body).toHaveProperty('breakdown');
+  });
+
+  it('POST /api/analytics/costs/refresh queues a cost sync job', async () => {
+    const res = await request(app)
+      .post('/api/analytics/costs/refresh')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(202);
+    expect(res.body.job).toHaveProperty('id');
+    queuedCostJobId = res.body.job.id;
+  });
+
+  it('GET /api/analytics/jobs/:jobId returns cost sync job status', async () => {
+    const res = await request(app)
+      .get(`/api/analytics/jobs/${queuedCostJobId}`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe(queuedCostJobId);
+  });
+
+  it('POST /api/analytics/costs/refresh returns 403 for viewer role', async () => {
+    const res = await request(app)
+      .post('/api/analytics/costs/refresh')
+      .set('Authorization', `Bearer ${viewerToken}`);
+    expect(res.status).toBe(403);
   });
 
   it('GET /api/analytics/costs?provider=aws filters by provider', async () => {
@@ -319,6 +344,7 @@ describe('Analytics API', () => {
 describe('Providers API', () => {
   let token;
   let viewerToken;
+  let providerHealthJobId;
 
   beforeAll(() => {
     token = makeToken();
@@ -345,6 +371,30 @@ describe('Providers API', () => {
       expect(p).toHaveProperty('configured');
       expect(p).toHaveProperty('status');
     });
+  });
+
+  it('POST /api/providers/health/refresh queues provider health job', async () => {
+    const res = await request(app)
+      .post('/api/providers/health/refresh')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(202);
+    expect(res.body.job).toHaveProperty('id');
+    providerHealthJobId = res.body.job.id;
+  });
+
+  it('GET /api/providers/health/jobs/:jobId returns provider health job status', async () => {
+    const res = await request(app)
+      .get(`/api/providers/health/jobs/${providerHealthJobId}`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe(providerHealthJobId);
+  });
+
+  it('POST /api/providers/health/refresh returns 403 for viewer role', async () => {
+    const res = await request(app)
+      .post('/api/providers/health/refresh')
+      .set('Authorization', `Bearer ${viewerToken}`);
+    expect(res.status).toBe(403);
   });
 
   it('GET /api/providers/unknown/resources returns 404', async () => {

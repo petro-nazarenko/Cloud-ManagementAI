@@ -10,11 +10,13 @@ const { getRedisConnection } = require('../queue/connection');
 const { JOB_NAMES } = require('../queue/jobNames');
 const { runRecommendationRefreshJob } = require('../jobs/recommendationRefreshJob');
 const { runProviderHealthRefreshJob } = require('../jobs/providerHealthRefreshJob');
+const { runCostSyncJob } = require('../jobs/costSyncJob');
+const { setLatestJobResult } = require('../queue/resultCache');
 
 const handlers = {
   [JOB_NAMES.recommendationRefresh]: runRecommendationRefreshJob,
   [JOB_NAMES.providerHealthRefresh]: runProviderHealthRefreshJob,
-  [JOB_NAMES.costSync]: async () => ({ status: 'not-implemented-yet' }),
+  [JOB_NAMES.costSync]: runCostSyncJob,
 };
 
 const start = async () => {
@@ -33,7 +35,9 @@ const start = async () => {
         throw new Error(`No job handler registered for '${job.name}'.`);
       }
 
-      return handler(job.data);
+      const result = await handler(job.data);
+      await setLatestJobResult(job.name, result);
+      return result;
     },
     {
       connection: getRedisConnection(),

@@ -128,6 +128,8 @@ This starts:
 |---|---|
 | Frontend | http://localhost:3000 |
 | Backend API | http://localhost:3001 |
+| Backend Worker | background queue worker |
+| Redis | localhost:6379 |
 | Prometheus | http://localhost:9090 |
 | Grafana | http://localhost:3002 (admin/admin) |
 
@@ -143,7 +145,14 @@ To stop: `docker-compose down`
 cd backend
 npm install
 cp .env.example .env          # Edit with your settings
+npm run migrate                # Apply DB migrations
 npm run dev                    # Starts with nodemon on :3001
+```
+
+Optional: run the worker separately in local mode
+```bash
+cd backend
+npm run worker
 ```
 
 ### Frontend
@@ -193,14 +202,20 @@ All resource endpoints require `Authorization: Bearer <token>`.
 | Method | Endpoint | Description |
 |---|---|---|
 | GET | `/api/analytics/costs` | Monthly cost breakdown by provider |
+| POST | `/api/analytics/costs/refresh` | Queue cost-sync job |
 | GET | `/api/analytics/usage` | Resource utilization metrics |
 | GET | `/api/analytics/recommendations` | AI-driven optimization recommendations |
+| POST | `/api/analytics/recommendations/refresh` | Queue recommendation refresh job |
+| GET | `/api/analytics/jobs/:jobId` | Check queued analytics job status |
 
 ### Cloud Providers
 
 | Method | Endpoint | Description |
 |---|---|---|
 | GET | `/api/providers` | List configured providers |
+| GET | `/api/providers/health` | Get provider health (cached when available) |
+| POST | `/api/providers/health/refresh` | Queue provider health refresh |
+| GET | `/api/providers/health/jobs/:jobId` | Check provider health job status |
 | GET | `/api/providers/:name/resources` | List resources from a provider |
 | POST | `/api/providers/:name/deploy` | Deploy a resource to a provider |
 
@@ -256,6 +271,17 @@ kubectl apply -f kubernetes/ingress.yaml
 kubectl get pods -n cloud-management
 kubectl get services -n cloud-management
 kubectl get ingress -n cloud-management
+```
+
+To verify queue flow after deployment:
+```bash
+# Queue recommendation refresh
+curl -X POST http://<backend-host>/api/analytics/recommendations/refresh \
+  -H "Authorization: Bearer <token>"
+
+# Poll job status using returned job.id
+curl http://<backend-host>/api/analytics/jobs/<jobId> \
+  -H "Authorization: Bearer <token>"
 ```
 
 ---

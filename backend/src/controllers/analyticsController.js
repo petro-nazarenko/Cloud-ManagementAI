@@ -1,50 +1,44 @@
 'use strict';
 
 const { Recommendation } = require('../models');
-const { enqueueRecommendationRefresh, getAnalyticsJobStatus } = require('../queue/analyticsQueue');
+const { buildCostsSnapshot } = require('../services/costService');
+const {
+  enqueueCostSync,
+  enqueueRecommendationRefresh,
+  getAnalyticsJobStatus,
+  getLatestJobResult,
+} = require('../queue/analyticsQueue');
+const { JOB_NAMES } = require('../queue/jobNames');
 
 /**
  * Returns mock cost data structured like a real cloud billing API.
  * Replace with live Cost Explorer / Azure Cost Management / GCP Billing calls.
  */
-const getCosts = (req, res) => {
+const getCosts = async (req, res, next) => {
+  try {
   const { period = '30d', provider } = req.query;
 
-  const allCosts = {
-    aws: [
-      { service: 'EC2', amount: 1240.50, currency: 'USD', period },
-      { service: 'S3', amount: 320.10, currency: 'USD', period },
-      { service: 'RDS', amount: 890.00, currency: 'USD', period },
-      { service: 'Lambda', amount: 45.80, currency: 'USD', period },
-    ],
-    azure: [
-      { service: 'Virtual Machines', amount: 980.00, currency: 'USD', period },
-      { service: 'Blob Storage', amount: 210.00, currency: 'USD', period },
-      { service: 'Azure SQL', amount: 640.00, currency: 'USD', period },
-    ],
-    gcp: [
-      { service: 'Compute Engine', amount: 750.00, currency: 'USD', period },
-      { service: 'Cloud Storage', amount: 190.00, currency: 'USD', period },
-      { service: 'BigQuery', amount: 420.00, currency: 'USD', period },
-    ],
-  };
+    const cached = await getLatestJobResult(JOB_NAMES.costSync);
+    if (cached) {
+      const filtered = buildCostsSnapshot(period, provider);
+      const totalsByProvider = new Map((cached.breakdown || []).map((item) => [item.provider, item]));
+      const breakdown = filtered.breakdown.map((item) => totalsByProvider.get(item.provider) || item);
+      const grandTotal = breakdown.reduce((sum, item) => sum + item.total, 0);
 
-  const data = provider ? { [provider]: allCosts[provider] || [] } : allCosts;
+      return res.json({
+        period,
+        grandTotal: { amount: parseFloat(grandTotal.toFixed(2)), currency: 'USD' },
+        breakdown,
+        source: 'queued-cache',
+        refreshedAt: cached.refreshedAt || null,
+      });
+    }
 
-  const totalByProvider = Object.entries(data).map(([p, services]) => ({
-    provider: p,
-    total: services.reduce((sum, s) => sum + s.amount, 0),
-    currency: 'USD',
-    services,
-  }));
-
-  const grandTotal = totalByProvider.reduce((sum, p) => sum + p.total, 0);
-
-  res.json({
-    period,
-    grandTotal: { amount: parseFloat(grandTotal.toFixed(2)), currency: 'USD' },
-    breakdown: totalByProvider,
-  });
+    const snapshot = buildCostsSnapshot(period, provider);
+    res.json({ ...snapshot, source: 'fallback-mock' });
+  } catch (err) {
+    next(err);
+  }
 };
 
 /**
@@ -115,6 +109,23 @@ const queueRecommendationRefresh = async (req, res, next) => {
   }
 };
 
+const queueCostSync = async (req, res, next) => {
+  try {
+    const job = await enqueueCostSync({
+      userId: req.user.sub,
+      email: req.user.email,
+      role: req.user.role,
+    });
+
+    res.status(202).json({
+      message: 'Cost sync queued.',
+      job,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 const getAnalyticsJob = async (req, res, next) => {
   try {
     const job = await getAnalyticsJobStatus(req.params.jobId);
@@ -161,6 +172,7 @@ module.exports = {
   getCosts,
   getUsage,
   getRecommendations,
+  queueCostSync,
   queueRecommendationRefresh,
   getAnalyticsJob,
   updateRecommendation,

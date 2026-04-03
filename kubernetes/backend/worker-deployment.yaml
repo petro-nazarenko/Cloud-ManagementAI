@@ -1,17 +1,17 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: backend
+  name: backend-worker
   namespace: cloud-management
   labels:
-    app: backend
-    app.kubernetes.io/name: backend
+    app: backend-worker
+    app.kubernetes.io/name: backend-worker
     app.kubernetes.io/part-of: cloud-management-ai
 spec:
-  replicas: 3
+  replicas: 2
   selector:
     matchLabels:
-      app: backend
+      app: backend-worker
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -20,12 +20,8 @@ spec:
   template:
     metadata:
       labels:
-        app: backend
-        app.kubernetes.io/name: backend
-      annotations:
-        prometheus.io/scrape: "true"
-        prometheus.io/port: "3001"
-        prometheus.io/path: "/metrics"
+        app: backend-worker
+        app.kubernetes.io/name: backend-worker
     spec:
       terminationGracePeriodSeconds: 60
       securityContext:
@@ -33,24 +29,13 @@ spec:
         runAsUser: 1000
         fsGroup: 1000
       containers:
-        - name: backend
+        - name: backend-worker
           image: cloud-mgmt/backend:latest
           imagePullPolicy: Always
-          ports:
-            - name: http
-              containerPort: 3001
-              protocol: TCP
+          command: ["npm", "run", "worker"]
           env:
             - name: NODE_ENV
               value: production
-            - name: PORT
-              value: "3001"
-            - name: PROMETHEUS_URL
-              value: http://prometheus:9090
-            - name: REDIS_URL
-              value: redis://redis:6379
-            - name: QUEUE_MODE
-              value: redis
             - name: DB_HOST
               valueFrom:
                 secretKeyRef:
@@ -91,6 +76,12 @@ spec:
                 secretKeyRef:
                   name: cloud-mgmt-db-secret
                   key: ENCRYPTION_KEY
+            - name: REDIS_URL
+              value: redis://redis:6379
+            - name: QUEUE_MODE
+              value: redis
+            - name: WORKER_CONCURRENCY
+              value: "5"
             - name: AWS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
@@ -146,22 +137,6 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
-          livenessProbe:
-            httpGet:
-              path: /health
-              port: http
-            initialDelaySeconds: 30
-            periodSeconds: 30
-            timeoutSeconds: 5
-            failureThreshold: 3
-          readinessProbe:
-            httpGet:
-              path: /health
-              port: http
-            initialDelaySeconds: 10
-            periodSeconds: 10
-            timeoutSeconds: 3
-            failureThreshold: 3
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

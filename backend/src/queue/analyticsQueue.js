@@ -6,6 +6,9 @@ const { isInlineQueueMode } = require('../utils/config');
 const { getRedisConnection } = require('./connection');
 const { JOB_NAMES } = require('./jobNames');
 const { runRecommendationRefreshJob } = require('../jobs/recommendationRefreshJob');
+const { runProviderHealthRefreshJob } = require('../jobs/providerHealthRefreshJob');
+const { runCostSyncJob } = require('../jobs/costSyncJob');
+const { getLatestJobResult, setLatestJobResult } = require('./resultCache');
 
 const inlineJobs = new Map();
 
@@ -32,15 +35,28 @@ const getAnalyticsQueue = () => {
   return analyticsQueue;
 };
 
-const runInlineRecommendationRefresh = async () => {
+const inlineHandlers = {
+  [JOB_NAMES.recommendationRefresh]: runRecommendationRefreshJob,
+  [JOB_NAMES.providerHealthRefresh]: runProviderHealthRefreshJob,
+  [JOB_NAMES.costSync]: runCostSyncJob,
+};
+
+const runInlineJob = async (jobName) => {
+  const handler = inlineHandlers[jobName];
+  if (!handler) {
+    throw new Error(`No inline handler registered for '${jobName}'.`);
+  }
+
   const jobId = `inline-${Date.now()}`;
-  inlineJobs.set(jobId, { id: jobId, name: JOB_NAMES.recommendationRefresh, state: 'active', mode: 'inline' });
+  inlineJobs.set(jobId, { id: jobId, name: jobName, state: 'active', mode: 'inline' });
 
   try {
-    const result = await runRecommendationRefreshJob();
+    const result = await handler();
+    await setLatestJobResult(jobName, result);
+
     const job = {
       id: jobId,
-      name: JOB_NAMES.recommendationRefresh,
+      name: jobName,
       state: 'completed',
       mode: 'inline',
       result,
@@ -50,7 +66,7 @@ const runInlineRecommendationRefresh = async () => {
   } catch (error) {
     const job = {
       id: jobId,
-      name: JOB_NAMES.recommendationRefresh,
+      name: jobName,
       state: 'failed',
       mode: 'inline',
       error: error.message,
@@ -60,15 +76,15 @@ const runInlineRecommendationRefresh = async () => {
   }
 };
 
-const enqueueRecommendationRefresh = async (requestedBy) => {
+const enqueueAnalyticsJob = async (jobName, payload = {}) => {
   if (isInlineQueueMode()) {
-    return runInlineRecommendationRefresh();
+    return runInlineJob(jobName);
   }
 
   const queue = getAnalyticsQueue();
-  const job = await queue.add(JOB_NAMES.recommendationRefresh, { requestedBy });
+  const job = await queue.add(jobName, payload);
 
-  logger.info(`Queued recommendation refresh job '${job.id}'.`);
+  logger.info(`Queued analytics job '${jobName}' with id '${job.id}'.`);
 
   return {
     id: job.id,
@@ -98,8 +114,16 @@ const getAnalyticsJobStatus = async (jobId) => {
   };
 };
 
+const enqueueRecommendationRefresh = async (requestedBy) => enqueueAnalyticsJob(JOB_NAMES.recommendationRefresh, { requestedBy });
+const enqueueProviderHealthRefresh = async (requestedBy) => enqueueAnalyticsJob(JOB_NAMES.providerHealthRefresh, { requestedBy });
+const enqueueCostSync = async (requestedBy) => enqueueAnalyticsJob(JOB_NAMES.costSync, { requestedBy });
+
 module.exports = {
+  enqueueAnalyticsJob,
+  enqueueCostSync,
+  enqueueProviderHealthRefresh,
   enqueueRecommendationRefresh,
   getAnalyticsJobStatus,
   getAnalyticsQueue,
+  getLatestJobResult,
 };
