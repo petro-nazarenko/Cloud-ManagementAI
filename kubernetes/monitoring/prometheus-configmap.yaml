@@ -89,3 +89,19 @@ data:
             annotations:
               summary: "High HTTP error rate"
               description: "Backend error rate is above 5% for 2 minutes."
+          - alert: QueueJobFailures
+            expr: sum by(job_name) (increase(queue_jobs_processed_total{job="backend",status="failed"}[10m])) > 0
+            for: 2m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Queue job failures detected"
+              description: "At least one queue job failure was recorded over the last 10 minutes."
+          - alert: QueueJobLatencyHighP95
+            expr: histogram_quantile(0.95, sum by (le, job_name) (rate(queue_job_duration_seconds_bucket{job="backend",status="completed"}[10m]))) > 5
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High queue processing latency p95"
+              description: "Queue job p95 processing time is above 5 seconds for 10 minutes."

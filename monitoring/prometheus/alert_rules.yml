@@ -134,6 +134,35 @@ groups:
             Backend is receiving {{ $value | printf "%.0f" }} req/s, which may indicate
             a traffic spike or DDoS attempt.
 
+      - alert: QueueJobFailures
+        expr: |
+          sum by(job_name) (increase(queue_jobs_processed_total{job="backend",status="failed"}[10m])) > 0
+        for: 2m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Queue job failures detected ({{ $labels.job_name }})"
+          description: >-
+            Queue job {{ $labels.job_name }} has at least one failure in the last 10 minutes.
+          runbook_url: https://wiki.example.com/runbooks/queue-job-failures
+
+      - alert: QueueJobLatencyHighP95
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le, job_name) (rate(queue_job_duration_seconds_bucket{job="backend",status="completed"}[10m]))
+          ) > 5
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High queue processing latency p95 ({{ $labels.job_name }})"
+          description: >-
+            Queue job {{ $labels.job_name }} p95 processing time is {{ $value | printf "%.2f" }}s,
+            above the 5s threshold.
+          runbook_url: https://wiki.example.com/runbooks/queue-latency
+
   - name: containers
     interval: 30s
     rules:
