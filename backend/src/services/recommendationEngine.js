@@ -10,7 +10,8 @@
 const { Recommendation, Resource } = require('../models');
 const logger = require('../utils/logger');
 
-// ── Rule definitions ──────────────────────────────────────────────────────────
+const STOPPED_RESOURCE_DEFAULT_COST = 50;
+const STOPPED_RESOURCE_SAVINGS_RATIO = 0.9;
 
 const RULES = [
   {
@@ -50,7 +51,7 @@ const RULES = [
       resourceName: r.name,
       type: 'schedule',
       severity: 'high',
-      estimatedMonthlySavings: parseFloat(((r.monthlyCost || 50) * 0.9).toFixed(2)),
+      estimatedMonthlySavings: parseFloat(((r.monthlyCost || STOPPED_RESOURCE_DEFAULT_COST) * STOPPED_RESOURCE_SAVINGS_RATIO).toFixed(2)),
       currency: 'USD',
       description: `${r.name} is stopped but still incurs storage costs. Consider terminating and snapshotting if unused.`,
       action: `Terminate ${r.name} after taking a snapshot, or configure an auto-start/stop schedule.`,

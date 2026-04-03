@@ -64,7 +64,11 @@ const connect = async (maxRetries = 5, delayMs = 2000) => {
 
 /**
  * Sync all models to the database.
- * In production use { alter: false } — run explicit migrations instead.
+ * - In test mode: `force: true` drops and recreates all tables (clean slate).
+ * - In development mode: `alter: true` may be used to apply incremental changes.
+ * - In production: `alter: false` is the default — run explicit migration scripts
+ *   (e.g., Umzug or sequelize-cli migrations) to evolve the schema safely.
+ *   Never use `force: true` or `alter: true` against a production database.
  */
 const sync = async (options = {}) => {
   const defaultOptions = process.env.NODE_ENV === 'test' ? { force: true } : { alter: false };

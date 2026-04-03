@@ -5,12 +5,15 @@ const crypto = require('crypto');
 const { User } = require('../models');
 
 const SALT_ROUNDS = 10;
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
 const ALGORITHM = 'aes-256-gcm';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const encrypt = (text) => {
+  if (!ENCRYPTION_KEY) {
+    throw new Error('ENCRYPTION_KEY environment variable is required to store cloud credentials.');
+  }
   const iv = crypto.randomBytes(16);
   const key = Buffer.from(ENCRYPTION_KEY.slice(0, 64), 'hex');
   const cipher = crypto.createCipheriv(ALGORITHM, key, iv);

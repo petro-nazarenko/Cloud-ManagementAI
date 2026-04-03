@@ -16,7 +16,7 @@ export default function Settings() {
   const { user, logout } = useAuth();
   const [saved, setSaved] = useState(false);
   const [saveMsg, setSaveMsg] = useState('');
-  const [loading, setLoading] = useState(false);
+const LOGOUT_DELAY_MS = 3000;
 
   const [profile, setProfile] = useState({
     name: user?.name || '',
@@ -112,7 +112,7 @@ export default function Settings() {
       setSaveMsg('Password changed successfully. Please log in again.');
       setSaved(true);
       setPasswordFields({ current: '', next: '', confirm: '' });
-      setTimeout(() => logout(), 3000);
+      setTimeout(() => logout(), LOGOUT_DELAY_MS);
     } catch (err) {
       setPasswordError(err.response?.data?.error || 'Failed to change password.');
     } finally {
