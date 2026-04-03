@@ -12,9 +12,14 @@ const resourcesRouter = require('./routes/resources');
 const analyticsRouter = require('./routes/analytics');
 const authRouter = require('./routes/auth');
 const providersRouter = require('./routes/providers');
+const usersRouter = require('./routes/users');
 const errorHandler = require('./middleware/errorHandler');
 const metricsService = require('./services/metricsService');
 const logger = require('./utils/logger');
+const { connect, sync } = require('./utils/db');
+const { seedAdmin } = require('./controllers/authController');
+const { seedResources } = require('./controllers/resourceController');
+const { seedRecommendations } = require('./services/recommendationEngine');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -33,14 +38,24 @@ app.use(cors({
     if (allowedOrigins.includes(origin)) return callback(null, true);
     callback(new Error(`CORS policy: origin '${origin}' not allowed.`));
   },
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
-// Rate limiting
+// Tight rate limit for auth endpoints (prevent brute-force)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: parseInt(process.env.AUTH_RATE_LIMIT_MAX || '20', 10),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many authentication attempts, please try again later.' },
+});
+app.use('/api/auth/', authLimiter);
+
+// General API rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: parseInt(process.env.RATE_LIMIT_MAX || '100', 10),
+  max: parseInt(process.env.RATE_LIMIT_MAX || '200', 10),
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later.' },
@@ -91,6 +106,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/resources', resourcesRouter);
 app.use('/api/analytics', analyticsRouter);
 app.use('/api/providers', providersRouter);
+app.use('/api/users', usersRouter);
 
 // 404 handler
 app.use((req, res) => {
@@ -102,9 +118,21 @@ app.use(errorHandler);
 
 // Start server only when this module is the entry point
 if (require.main === module) {
-  app.listen(PORT, () => {
-    logger.info(`Cloud Management AI backend running on port ${PORT}`);
-  });
+  (async () => {
+    try {
+      await connect();
+      await sync();
+      await seedAdmin();
+      await seedResources();
+      await seedRecommendations();
+      app.listen(PORT, () => {
+        logger.info(`Cloud Management AI backend running on port ${PORT}`);
+      });
+    } catch (err) {
+      logger.error(`Startup failed: ${err.message}`);
+      process.exit(1);
+    }
+  })();
 }
 
 module.exports = app;

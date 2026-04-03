@@ -1,24 +1,28 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box, Card, CardContent, Grid, Typography, Button, TextField,
   Switch, FormControlLabel, Divider, Avatar, Chip, Alert,
   List, ListItem, ListItemText, ListItemSecondaryAction,
-  Select, MenuItem, FormControl, InputLabel, Snackbar,
+  Select, MenuItem, FormControl, InputLabel, Snackbar, CircularProgress,
 } from '@mui/material';
 import SaveIcon from '@mui/icons-material/Save';
 import PersonIcon from '@mui/icons-material/Person';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import SecurityIcon from '@mui/icons-material/Security';
 import { useAuth } from '../context/AuthContext';
+import { usersAPI } from '../services/api';
 
 export default function Settings() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const [saved, setSaved] = useState(false);
+  const [saveMsg, setSaveMsg] = useState('');
+const LOGOUT_DELAY_MS = 3000;
+
   const [profile, setProfile] = useState({
     name: user?.name || '',
     email: user?.email || '',
-    role: user?.role || 'Admin',
-    timezone: 'UTC-5 (Eastern)',
+    role: user?.role || 'viewer',
+    timezone: 'UTC',
   });
   const [notifications, setNotifications] = useState({
     costAlerts: true,
@@ -29,10 +33,91 @@ export default function Settings() {
     slackIntegration: false,
   });
   const [currency, setCurrency] = useState('USD');
-  const [costThreshold, setCostThreshold] = useState('500');
+  const [costThreshold, setCostThreshold] = useState('1000');
+  const [passwordFields, setPasswordFields] = useState({ current: '', next: '', confirm: '' });
+  const [passwordError, setPasswordError] = useState('');
 
-  const handleSave = () => {
-    setSaved(true);
+  // Load current user data
+  useEffect(() => {
+    const loadProfile = async () => {
+      try {
+        const res = await usersAPI.me();
+        const u = res.data;
+        setProfile({ name: u.name, email: u.email, role: u.role, timezone: u.timezone || 'UTC' });
+        setCurrency(u.currency || 'USD');
+        setCostThreshold(String(u.costAlertThreshold || 1000));
+        if (u.notifications) setNotifications(u.notifications);
+      } catch {
+        // Use data from auth context as fallback
+      }
+    };
+    loadProfile();
+  }, []);
+
+  const handleSaveProfile = async () => {
+    setLoading(true);
+    try {
+      await usersAPI.updateProfile({ name: profile.name, email: profile.email, timezone: profile.timezone });
+      setSaveMsg('Profile saved successfully');
+      setSaved(true);
+    } catch (err) {
+      setSaveMsg(err.response?.data?.error || 'Failed to save profile');
+      setSaved(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveNotifications = async () => {
+    setLoading(true);
+    try {
+      await usersAPI.updateNotifications(notifications);
+      setSaveMsg('Notification preferences saved');
+      setSaved(true);
+    } catch {
+      setSaveMsg('Failed to save notifications');
+      setSaved(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSavePreferences = async () => {
+    setLoading(true);
+    try {
+      await usersAPI.updateSettings({ currency, costAlertThreshold: parseFloat(costThreshold) });
+      setSaveMsg('Preferences saved successfully');
+      setSaved(true);
+    } catch {
+      setSaveMsg('Failed to save preferences');
+      setSaved(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    setPasswordError('');
+    if (passwordFields.next !== passwordFields.confirm) {
+      setPasswordError('New passwords do not match.');
+      return;
+    }
+    if (passwordFields.next.length < 8) {
+      setPasswordError('New password must be at least 8 characters.');
+      return;
+    }
+    setLoading(true);
+    try {
+      await usersAPI.updatePassword(passwordFields.current, passwordFields.next);
+      setSaveMsg('Password changed successfully. Please log in again.');
+      setSaved(true);
+      setPasswordFields({ current: '', next: '', confirm: '' });
+      setTimeout(() => logout(), LOGOUT_DELAY_MS);
+    } catch (err) {
+      setPasswordError(err.response?.data?.error || 'Failed to change password.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -58,7 +143,7 @@ export default function Settings() {
 
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
                 <Avatar sx={{ bgcolor: 'primary.main', width: 64, height: 64, fontSize: 28 }}>
-                  {user?.avatar || 'U'}
+                  {user?.name?.charAt(0).toUpperCase() || 'U'}
                 </Avatar>
                 <Box>
                   <Typography variant="body1" fontWeight={700}>{profile.name}</Typography>
@@ -88,6 +173,7 @@ export default function Settings() {
                     label="Timezone"
                     onChange={(e) => setProfile({ ...profile, timezone: e.target.value })}
                   >
+                    <MenuItem value="UTC">UTC</MenuItem>
                     <MenuItem value="UTC-8 (Pacific)">UTC-8 (Pacific)</MenuItem>
                     <MenuItem value="UTC-7 (Mountain)">UTC-7 (Mountain)</MenuItem>
                     <MenuItem value="UTC-6 (Central)">UTC-6 (Central)</MenuItem>
@@ -96,7 +182,14 @@ export default function Settings() {
                     <MenuItem value="UTC+1 (Paris)">UTC+1 (Paris)</MenuItem>
                   </Select>
                 </FormControl>
-                <Button variant="contained" startIcon={<SaveIcon />} onClick={handleSave} size="small" sx={{ alignSelf: 'flex-start' }}>
+                <Button
+                  variant="contained"
+                  startIcon={loading ? <CircularProgress size={16} color="inherit" /> : <SaveIcon />}
+                  onClick={handleSaveProfile}
+                  disabled={loading}
+                  size="small"
+                  sx={{ alignSelf: 'flex-start' }}
+                >
                   Save Profile
                 </Button>
               </Box>
@@ -142,6 +235,16 @@ export default function Settings() {
                   </React.Fragment>
                 ))}
               </List>
+              <Button
+                variant="contained"
+                startIcon={<SaveIcon />}
+                onClick={handleSaveNotifications}
+                disabled={loading}
+                size="small"
+                sx={{ mt: 2 }}
+              >
+                Save Notifications
+              </Button>
             </CardContent>
           </Card>
         </Grid>
@@ -175,10 +278,14 @@ export default function Settings() {
                   fullWidth
                   helperText="Receive an alert when monthly spend exceeds this amount"
                 />
-                <Alert severity="info" sx={{ fontSize: 12 }}>
-                  Current month spend: <strong>$30,700</strong> — 6,040% of threshold
-                </Alert>
-                <Button variant="contained" startIcon={<SaveIcon />} onClick={handleSave} size="small" sx={{ alignSelf: 'flex-start' }}>
+                <Button
+                  variant="contained"
+                  startIcon={<SaveIcon />}
+                  onClick={handleSavePreferences}
+                  disabled={loading}
+                  size="small"
+                  sx={{ alignSelf: 'flex-start' }}
+                >
                   Save Preferences
                 </Button>
               </Box>
@@ -197,18 +304,43 @@ export default function Settings() {
                 <Typography variant="h6">Security</Typography>
               </Box>
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <TextField label="Current Password" type="password" size="small" fullWidth />
-                <TextField label="New Password" type="password" size="small" fullWidth />
-                <TextField label="Confirm New Password" type="password" size="small" fullWidth />
+                {passwordError && <Alert severity="error">{passwordError}</Alert>}
+                <TextField
+                  label="Current Password"
+                  type="password"
+                  size="small"
+                  fullWidth
+                  value={passwordFields.current}
+                  onChange={(e) => setPasswordFields({ ...passwordFields, current: e.target.value })}
+                />
+                <TextField
+                  label="New Password"
+                  type="password"
+                  size="small"
+                  fullWidth
+                  value={passwordFields.next}
+                  onChange={(e) => setPasswordFields({ ...passwordFields, next: e.target.value })}
+                />
+                <TextField
+                  label="Confirm New Password"
+                  type="password"
+                  size="small"
+                  fullWidth
+                  value={passwordFields.confirm}
+                  onChange={(e) => setPasswordFields({ ...passwordFields, confirm: e.target.value })}
+                />
                 <FormControlLabel
                   control={<Switch defaultChecked size="small" />}
                   label={<Typography variant="body2">Enable two-factor authentication</Typography>}
                 />
-                <FormControlLabel
-                  control={<Switch size="small" />}
-                  label={<Typography variant="body2">Log out all other sessions</Typography>}
-                />
-                <Button variant="outlined" color="error" size="small" sx={{ alignSelf: 'flex-start' }}>
+                <Button
+                  variant="outlined"
+                  color="error"
+                  size="small"
+                  sx={{ alignSelf: 'flex-start' }}
+                  onClick={handleChangePassword}
+                  disabled={loading || !passwordFields.current || !passwordFields.next}
+                >
                   Change Password
                 </Button>
               </Box>
@@ -219,11 +351,12 @@ export default function Settings() {
 
       <Snackbar
         open={saved}
-        autoHideDuration={3000}
+        autoHideDuration={4000}
         onClose={() => setSaved(false)}
-        message="Settings saved successfully"
+        message={saveMsg}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
       />
     </Box>
   );
 }
+

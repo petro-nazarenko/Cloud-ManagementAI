@@ -12,7 +12,7 @@ import { useAuth } from '../context/AuthContext';
 
 export default function Login() {
   const { login } = useAuth();
-  const [email, setEmail] = useState('admin@cloudmgmt.ai');
+  const [email, setEmail] = useState('admin@example.com');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -157,7 +157,7 @@ export default function Login() {
               </Divider>
 
               <Alert severity="info" sx={{ fontSize: 12 }}>
-                Use any email and password to sign in to the demo dashboard.
+                Demo credentials: <strong>admin@example.com</strong> / <strong>admin1234</strong>
               </Alert>
             </Box>
           </CardContent>

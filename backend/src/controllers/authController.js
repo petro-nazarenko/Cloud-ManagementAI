@@ -2,28 +2,29 @@
 
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { User } = require('../models');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-production';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '1h';
 const JWT_REFRESH_EXPIRES_IN = process.env.JWT_REFRESH_EXPIRES_IN || '7d';
 const SALT_ROUNDS = 10;
 
-// In-memory user store — replace with a real database in production
-const users = new Map();
-
-// Seed a default admin account
+/**
+ * Seed a default admin account if one does not already exist.
+ * Called from index.js after the DB is connected and synced.
+ */
 const seedAdmin = async () => {
-  const hash = await bcrypt.hash('admin1234', SALT_ROUNDS);
-  users.set('admin@example.com', {
-    id: 'u-001',
-    name: 'Admin User',
-    email: 'admin@example.com',
-    passwordHash: hash,
-    role: 'admin',
-    createdAt: new Date().toISOString(),
-  });
+  const exists = await User.findOne({ where: { email: 'admin@example.com' } });
+  if (!exists) {
+    const passwordHash = await bcrypt.hash('admin1234', SALT_ROUNDS);
+    await User.create({
+      name: 'Admin User',
+      email: 'admin@example.com',
+      passwordHash,
+      role: 'admin',
+    });
+  }
 };
-seedAdmin();
 
 const signTokens = (user) => {
   const payload = { sub: user.id, email: user.email, role: user.role, name: user.name };
@@ -36,20 +37,18 @@ const register = async (req, res, next) => {
   try {
     const { name, email, password, role } = req.body;
 
-    if (users.has(email)) {
+    const existing = await User.findOne({ where: { email } });
+    if (existing) {
       return res.status(409).json({ error: 'Email already registered.' });
     }
 
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
-    const user = {
-      id: `u-${Date.now()}`,
+    const user = await User.create({
       name,
       email,
       passwordHash,
       role: role || 'viewer',
-      createdAt: new Date().toISOString(),
-    };
-    users.set(email, user);
+    });
 
     const tokens = signTokens(user);
     res.status(201).json({
@@ -64,7 +63,7 @@ const register = async (req, res, next) => {
 const login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
-    const user = users.get(email);
+    const user = await User.findOne({ where: { email } });
 
     if (!user) {
       return res.status(401).json({ error: 'Invalid credentials.' });
@@ -85,7 +84,7 @@ const login = async (req, res, next) => {
   }
 };
 
-const refresh = (req, res, next) => {
+const refresh = async (req, res, next) => {
   try {
     const { refreshToken } = req.body;
     let payload;
@@ -95,8 +94,7 @@ const refresh = (req, res, next) => {
       return res.status(401).json({ error: 'Invalid or expired refresh token.' });
     }
 
-    // Look up the user to get current role/name in case it changed
-    const user = Array.from(users.values()).find((u) => u.id === payload.sub);
+    const user = await User.findByPk(payload.sub);
     if (!user) {
       return res.status(401).json({ error: 'User not found.' });
     }
@@ -108,4 +106,4 @@ const refresh = (req, res, next) => {
   }
 };
 
-module.exports = { register, login, refresh };
+module.exports = { register, login, refresh, seedAdmin };

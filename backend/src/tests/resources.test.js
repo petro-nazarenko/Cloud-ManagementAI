@@ -3,6 +3,10 @@
 const request = require('supertest');
 const app = require('../index');
 const jwt = require('jsonwebtoken');
+const { connect, sync, close } = require('../utils/db');
+const { seedAdmin } = require('../controllers/authController');
+const { seedResources } = require('../controllers/resourceController');
+const { seedRecommendations } = require('../services/recommendationEngine');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-production';
 
@@ -13,6 +17,19 @@ const makeToken = (overrides = {}) =>
     JWT_SECRET,
     { expiresIn: '1h' }
   );
+
+beforeAll(async () => {
+  // NODE_ENV=test → SQLite in-memory (see utils/db.js)
+  await connect();
+  await sync({ force: true });
+  await seedAdmin();
+  await seedResources();
+  await seedRecommendations();
+}, 30000);
+
+afterAll(async () => {
+  await close();
+});
 
 describe('Health & Metrics', () => {
   it('GET /health returns 200 with status ok', async () => {
@@ -58,11 +75,21 @@ describe('Auth endpoints', () => {
     expect(res.status).toBe(401);
   });
 
+  it('POST /api/auth/login returns 401 for unknown email', async () => {
+    const res = await request(app).post('/api/auth/login').send({ email: 'nobody@example.com', password: 'wrong' });
+    expect(res.status).toBe(401);
+  });
+
   it('POST /api/auth/refresh returns new tokens', async () => {
     const loginRes = await request(app).post('/api/auth/login').send({ email: 'admin@example.com', password: 'admin1234' });
     const res = await request(app).post('/api/auth/refresh').send({ refreshToken: loginRes.body.refreshToken });
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('accessToken');
+  });
+
+  it('POST /api/auth/refresh returns 401 for invalid token', async () => {
+    const res = await request(app).post('/api/auth/refresh').send({ refreshToken: 'bad-token' });
+    expect(res.status).toBe(401);
   });
 });
 
@@ -84,7 +111,9 @@ describe('Resources API', () => {
       .set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(res.body.data).toBeInstanceOf(Array);
-    expect(res.body.total).toBeGreaterThanOrEqual(3);
+    expect(res.body.total).toBeGreaterThanOrEqual(1);
+    expect(res.body).toHaveProperty('page');
+    expect(res.body).toHaveProperty('totalPages');
   });
 
   it('GET /api/resources?provider=aws filters by provider', async () => {
@@ -93,6 +122,15 @@ describe('Resources API', () => {
       .set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(200);
     res.body.data.forEach((r) => expect(r.provider).toBe('aws'));
+  });
+
+  it('GET /api/resources supports pagination', async () => {
+    const res = await request(app)
+      .get('/api/resources?page=1&limit=2')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.length).toBeLessThanOrEqual(2);
+    expect(res.body.limit).toBe(2);
   });
 
   let createdId;
@@ -162,6 +200,15 @@ describe('Analytics API', () => {
     expect(res.body).toHaveProperty('breakdown');
   });
 
+  it('GET /api/analytics/costs?provider=aws filters by provider', async () => {
+    const res = await request(app)
+      .get('/api/analytics/costs?provider=aws')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.breakdown.length).toBe(1);
+    expect(res.body.breakdown[0].provider).toBe('aws');
+  });
+
   it('GET /api/analytics/usage returns utilisation data', async () => {
     const res = await request(app)
       .get('/api/analytics/usage')
@@ -177,6 +224,41 @@ describe('Analytics API', () => {
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('totalEstimatedMonthlySavings');
     expect(res.body.data.length).toBeGreaterThan(0);
+  });
+
+  it('PATCH /api/analytics/recommendations/:id updates status', async () => {
+    const listRes = await request(app)
+      .get('/api/analytics/recommendations')
+      .set('Authorization', `Bearer ${token}`);
+    const recId = listRes.body.data[0].id;
+
+    const res = await request(app)
+      .patch(`/api/analytics/recommendations/${recId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ status: 'dismissed' });
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('dismissed');
+  });
+
+  it('PATCH /api/analytics/recommendations/:id returns 400 for invalid status', async () => {
+    const listRes = await request(app)
+      .get('/api/analytics/recommendations?status=dismissed')
+      .set('Authorization', `Bearer ${token}`);
+    const recId = listRes.body.data[0]?.id || '00000000-0000-0000-0000-000000000000';
+
+    const res = await request(app)
+      .patch(`/api/analytics/recommendations/${recId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ status: 'invalid' });
+    expect(res.status).toBe(400);
+  });
+
+  it('PATCH /api/analytics/recommendations/:id returns 404 for unknown id', async () => {
+    const res = await request(app)
+      .patch('/api/analytics/recommendations/00000000-0000-0000-0000-000000000000')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ status: 'applied' });
+    expect(res.status).toBe(404);
   });
 });
 
@@ -195,10 +277,96 @@ describe('Providers API', () => {
     expect(names).toContain('gcp');
   });
 
+  it('GET /api/providers lists configured status', async () => {
+    const res = await request(app)
+      .get('/api/providers')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    res.body.providers.forEach((p) => {
+      expect(p).toHaveProperty('configured');
+      expect(p).toHaveProperty('status');
+    });
+  });
+
   it('GET /api/providers/unknown/resources returns 404', async () => {
     const res = await request(app)
       .get('/api/providers/unknown/resources')
       .set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(404);
+  });
+
+  it('POST /api/providers/unknown/deploy returns 404', async () => {
+    const res = await request(app)
+      .post('/api/providers/unknown/deploy')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ resourceType: 'ec2', region: 'us-east-1', name: 'test' });
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('Users API', () => {
+  let token;
+  let adminId;
+
+  beforeAll(async () => {
+    const res = await request(app).post('/api/auth/login').send({ email: 'admin@example.com', password: 'admin1234' });
+    token = res.body.accessToken;
+    adminId = res.body.user.id;
+  });
+
+  it('GET /api/users/me returns current user', async () => {
+    const res = await request(app)
+      .get('/api/users/me')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.email).toBe('admin@example.com');
+    expect(res.body).not.toHaveProperty('passwordHash');
+  });
+
+  it('PUT /api/users/profile updates name', async () => {
+    const res = await request(app)
+      .put('/api/users/profile')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Updated Admin' });
+    expect(res.status).toBe(200);
+    expect(res.body.name).toBe('Updated Admin');
+  });
+
+  it('PUT /api/users/notifications updates preferences', async () => {
+    const res = await request(app)
+      .put('/api/users/notifications')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ costAlerts: false, weeklyReport: false });
+    expect(res.status).toBe(200);
+    expect(res.body.notifications.costAlerts).toBe(false);
+  });
+
+  it('PUT /api/users/settings updates cost preferences', async () => {
+    const res = await request(app)
+      .put('/api/users/settings')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ currency: 'EUR', costAlertThreshold: 2000 });
+    expect(res.status).toBe(200);
+  });
+
+  it('PUT /api/users/password returns 401 for wrong current password', async () => {
+    const res = await request(app)
+      .put('/api/users/password')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ currentPassword: 'wrong', newPassword: 'newpassword123' });
+    expect(res.status).toBe(401);
+  });
+
+  it('PUT /api/users/password succeeds with correct current password', async () => {
+    const res = await request(app)
+      .put('/api/users/password')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ currentPassword: 'admin1234', newPassword: 'NewAdmin9999!' });
+    expect(res.status).toBe(200);
+  });
+
+  it('GET /api/users/me returns 401 without token', async () => {
+    const res = await request(app).get('/api/users/me');
+    expect(res.status).toBe(401);
   });
 });

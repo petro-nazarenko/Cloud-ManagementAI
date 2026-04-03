@@ -1,10 +1,24 @@
 'use strict';
 
 const { Router } = require('express');
+const Joi = require('joi');
 const authenticate = require('../middleware/auth');
 const analyticsController = require('../controllers/analyticsController');
 
 const router = Router();
+
+const validate = (schema) => (req, res, next) => {
+  const { error, value } = schema.validate(req.body, { abortEarly: false, stripUnknown: true });
+  if (error) {
+    return res.status(400).json({ error: 'Validation failed', details: error.details.map((d) => d.message) });
+  }
+  req.body = value;
+  next();
+};
+
+const recStatusSchema = Joi.object({
+  status: Joi.string().valid('open', 'applied', 'dismissed').required(),
+});
 
 // All analytics routes require authentication
 router.use(authenticate);
@@ -17,5 +31,8 @@ router.get('/usage', analyticsController.getUsage);
 
 // GET /api/analytics/recommendations — AI-generated cost-saving recommendations
 router.get('/recommendations', analyticsController.getRecommendations);
+
+// PATCH /api/analytics/recommendations/:id — update recommendation status (apply/dismiss)
+router.patch('/recommendations/:id', validate(recStatusSchema), analyticsController.updateRecommendation);
 
 module.exports = router;

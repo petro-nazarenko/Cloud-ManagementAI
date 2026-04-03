@@ -47,6 +47,94 @@ spec:
               value: "3001"
             - name: PROMETHEUS_URL
               value: http://prometheus:9090
+            - name: DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: cloud-mgmt-db-secret
+                  key: DB_HOST
+            - name: DB_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: cloud-mgmt-db-secret
+                  key: DB_PORT
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: cloud-mgmt-db-secret
+                  key: DB_NAME
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: cloud-mgmt-db-secret
+                  key: DB_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: cloud-mgmt-db-secret
+                  key: DB_PASSWORD
+            - name: DB_SSL
+              valueFrom:
+                secretKeyRef:
+                  name: cloud-mgmt-db-secret
+                  key: DB_SSL
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: cloud-mgmt-db-secret
+                  key: JWT_SECRET
+            - name: ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: cloud-mgmt-db-secret
+                  key: ENCRYPTION_KEY
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: cloud-mgmt-provider-secret
+                  key: AWS_ACCESS_KEY_ID
+                  optional: true
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: cloud-mgmt-provider-secret
+                  key: AWS_SECRET_ACCESS_KEY
+                  optional: true
+            - name: AWS_DEFAULT_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: cloud-mgmt-provider-secret
+                  key: AWS_DEFAULT_REGION
+                  optional: true
+            - name: AZURE_TENANT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: cloud-mgmt-provider-secret
+                  key: AZURE_TENANT_ID
+                  optional: true
+            - name: AZURE_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: cloud-mgmt-provider-secret
+                  key: AZURE_CLIENT_ID
+                  optional: true
+            - name: AZURE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: cloud-mgmt-provider-secret
+                  key: AZURE_CLIENT_SECRET
+                  optional: true
+            - name: AZURE_SUBSCRIPTION_ID
+              valueFrom:
+                secretKeyRef:
+                  name: cloud-mgmt-provider-secret
+                  key: AZURE_SUBSCRIPTION_ID
+                  optional: true
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              valueFrom:
+                secretKeyRef:
+                  name: cloud-mgmt-provider-secret
+                  key: GOOGLE_APPLICATION_CREDENTIALS
+                  optional: true
           resources:
             requests:
               cpu: 100m

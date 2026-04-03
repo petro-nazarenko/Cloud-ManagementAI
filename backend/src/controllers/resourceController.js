@@ -1,80 +1,106 @@
 'use strict';
 
-const { randomUUID } = require('crypto');
+const { Op } = require('sequelize');
+const { Resource } = require('../models');
 
-const uuidv4 = () => randomUUID();
+const listResources = async (req, res, next) => {
+  try {
+    const { provider, type, status, region, page = '1', limit = '50' } = req.query;
 
-// In-memory resource store — replace with a real DB in production
-const resources = new Map();
+    const where = {};
+    if (provider) where.provider = provider;
+    if (type) where.type = type;
+    if (status) where.status = status;
+    if (region) where.region = region;
 
-// Seed some sample resources
-const seed = [
-  { id: 'r-001', name: 'prod-web-server', type: 'ec2', provider: 'aws', region: 'us-east-1', status: 'running', tags: { env: 'production' }, config: { instanceType: 't3.medium' }, createdAt: new Date('2024-01-15').toISOString(), updatedAt: new Date('2024-01-15').toISOString() },
-  { id: 'r-002', name: 'assets-bucket', type: 's3', provider: 'aws', region: 'us-east-1', status: 'active', tags: { env: 'production' }, config: {}, createdAt: new Date('2024-01-20').toISOString(), updatedAt: new Date('2024-01-20').toISOString() },
-  { id: 'r-003', name: 'staging-vm', type: 'vm', provider: 'azure', region: 'eastus', status: 'stopped', tags: { env: 'staging' }, config: { size: 'Standard_B2s' }, createdAt: new Date('2024-02-01').toISOString(), updatedAt: new Date('2024-02-01').toISOString() },
-];
-seed.forEach((r) => resources.set(r.id, r));
+    const pageNum = Math.max(1, parseInt(page, 10));
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10)));
+    const offset = (pageNum - 1) * limitNum;
 
-const listResources = (req, res) => {
-  const { provider, type, status, region } = req.query;
-  let result = Array.from(resources.values());
+    const { count, rows } = await Resource.findAndCountAll({
+      where,
+      limit: limitNum,
+      offset,
+      order: [['createdAt', 'DESC']],
+    });
 
-  if (provider) result = result.filter((r) => r.provider === provider);
-  if (type) result = result.filter((r) => r.type === type);
-  if (status) result = result.filter((r) => r.status === status);
-  if (region) result = result.filter((r) => r.region === region);
-
-  res.json({
-    data: result,
-    total: result.length,
-    filters: { provider, type, status, region },
-  });
-};
-
-const getResource = (req, res) => {
-  const resource = resources.get(req.params.id);
-  if (!resource) {
-    return res.status(404).json({ error: `Resource '${req.params.id}' not found.` });
+    res.json({
+      data: rows,
+      total: count,
+      page: pageNum,
+      limit: limitNum,
+      totalPages: Math.ceil(count / limitNum),
+      filters: { provider, type, status, region },
+    });
+  } catch (err) {
+    next(err);
   }
-  res.json(resource);
 };
 
-const createResource = (req, res) => {
-  const id = `r-${uuidv4()}`;
-  const now = new Date().toISOString();
-  const resource = {
-    id,
-    ...req.body,
-    status: 'provisioning',
-    createdAt: now,
-    updatedAt: now,
-  };
-  resources.set(id, resource);
-  res.status(201).json(resource);
-};
-
-const updateResource = (req, res) => {
-  const existing = resources.get(req.params.id);
-  if (!existing) {
-    return res.status(404).json({ error: `Resource '${req.params.id}' not found.` });
+const getResource = async (req, res, next) => {
+  try {
+    const resource = await Resource.findByPk(req.params.id);
+    if (!resource) {
+      return res.status(404).json({ error: `Resource '${req.params.id}' not found.` });
+    }
+    res.json(resource);
+  } catch (err) {
+    next(err);
   }
-  const updated = {
-    ...existing,
-    ...req.body,
-    id: existing.id,
-    createdAt: existing.createdAt,
-    updatedAt: new Date().toISOString(),
-  };
-  resources.set(existing.id, updated);
-  res.json(updated);
 };
 
-const deleteResource = (req, res) => {
-  if (!resources.has(req.params.id)) {
-    return res.status(404).json({ error: `Resource '${req.params.id}' not found.` });
+const createResource = async (req, res, next) => {
+  try {
+    const resource = await Resource.create({
+      ...req.body,
+      status: 'provisioning',
+    });
+    res.status(201).json(resource);
+  } catch (err) {
+    next(err);
   }
-  resources.delete(req.params.id);
-  res.status(204).send();
 };
 
-module.exports = { listResources, getResource, createResource, updateResource, deleteResource };
+const updateResource = async (req, res, next) => {
+  try {
+    const resource = await Resource.findByPk(req.params.id);
+    if (!resource) {
+      return res.status(404).json({ error: `Resource '${req.params.id}' not found.` });
+    }
+    await resource.update(req.body);
+    res.json(resource);
+  } catch (err) {
+    next(err);
+  }
+};
+
+const deleteResource = async (req, res, next) => {
+  try {
+    const resource = await Resource.findByPk(req.params.id);
+    if (!resource) {
+      return res.status(404).json({ error: `Resource '${req.params.id}' not found.` });
+    }
+    await resource.destroy();
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * Seed initial sample resources if the DB is empty.
+ */
+const seedResources = async () => {
+  const count = await Resource.count();
+  if (count > 0) return;
+
+  await Resource.bulkCreate([
+    { name: 'prod-web-server', type: 'ec2', provider: 'aws', region: 'us-east-1', status: 'running', tags: { env: 'production' }, config: { instanceType: 't3.medium' }, monthlyCost: 142.5, cpuPercent: 67.4, memoryPercent: 72.1 },
+    { name: 'assets-bucket', type: 's3', provider: 'aws', region: 'us-east-1', status: 'active', tags: { env: 'production' }, config: {}, monthlyCost: 28.4 },
+    { name: 'staging-vm', type: 'vm', provider: 'azure', region: 'eastus', status: 'stopped', tags: { env: 'staging' }, config: { size: 'Standard_B2s' }, monthlyCost: 0, cpuPercent: 12.0, memoryPercent: 30.5 },
+    { name: 'rds-mysql-prod', type: 'database', provider: 'aws', region: 'us-east-1', status: 'running', tags: { env: 'production' }, config: { instanceClass: 'db.r6g.xlarge' }, monthlyCost: 310.8 },
+    { name: 'compute-node-1', type: 'ec2', provider: 'gcp', region: 'us-central1', status: 'running', tags: { env: 'production' }, config: { machineType: 'n1-standard-4' }, monthlyCost: 88.2, cpuPercent: 88.9, memoryPercent: 91.0 },
+  ]);
+};
+
+module.exports = { listResources, getResource, createResource, updateResource, deleteResource, seedResources };
