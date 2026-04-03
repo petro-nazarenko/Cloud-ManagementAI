@@ -1,8 +1,10 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
+import { authAPI } from '../services/api';
 
 const AuthContext = createContext(null);
 
 const TOKEN_KEY = process.env.REACT_APP_TOKEN_KEY || 'cloud_mgmt_token';
+const REFRESH_KEY = 'cloud_mgmt_refresh_token';
 const USER_KEY = 'cloud_mgmt_user';
 
 export function AuthProvider({ children }) {
@@ -17,27 +19,24 @@ export function AuthProvider({ children }) {
   });
 
   const login = useCallback(async (email, password) => {
-    // Mock authentication — replace with real API call
-    if (email && password) {
-      const mockToken = btoa(`${email}:${Date.now()}`);
-      const mockUser = {
-        id: 1,
-        name: email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
-        email,
-        role: 'Admin',
-        avatar: email.charAt(0).toUpperCase(),
-      };
-      localStorage.setItem(TOKEN_KEY, mockToken);
-      localStorage.setItem(USER_KEY, JSON.stringify(mockUser));
-      setToken(mockToken);
-      setUser(mockUser);
+    try {
+      const res = await authAPI.login(email, password);
+      const { user: apiUser, accessToken, refreshToken } = res.data;
+      localStorage.setItem(TOKEN_KEY, accessToken);
+      localStorage.setItem(REFRESH_KEY, refreshToken);
+      localStorage.setItem(USER_KEY, JSON.stringify(apiUser));
+      setToken(accessToken);
+      setUser(apiUser);
       return { success: true };
+    } catch (err) {
+      const msg = err.response?.data?.error || 'Login failed. Please check your credentials.';
+      return { success: false, error: msg };
     }
-    return { success: false, error: 'Invalid credentials' };
   }, []);
 
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(REFRESH_KEY);
     localStorage.removeItem(USER_KEY);
     setToken(null);
     setUser(null);

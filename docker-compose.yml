@@ -15,8 +15,31 @@ volumes:
     driver: local
   backend_logs:
     driver: local
+  postgres_data:
+    driver: local
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cloud-mgmt-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-cloudmgmt}
+      POSTGRES_USER: ${DB_USER:-cloudmgmt_admin}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - cloud-mgmt-backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-cloudmgmt_admin} -d ${DB_NAME:-cloudmgmt}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
   prometheus:
     image: prom/prometheus:v2.51.0
     container_name: cloud-mgmt-prometheus
@@ -58,12 +81,31 @@ services:
       NODE_ENV: production
       PORT: 3001
       PROMETHEUS_URL: http://prometheus:9090
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-cloudmgmt}
+      DB_USER: ${DB_USER:-cloudmgmt_admin}
+      DB_PASSWORD: ${DB_PASSWORD:-changeme}
+      DB_SSL: "false"
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+      # Cloud provider credentials (optional — configure to enable live data)
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
+      AZURE_TENANT_ID: ${AZURE_TENANT_ID:-}
+      AZURE_CLIENT_ID: ${AZURE_CLIENT_ID:-}
+      AZURE_CLIENT_SECRET: ${AZURE_CLIENT_SECRET:-}
+      AZURE_SUBSCRIPTION_ID: ${AZURE_SUBSCRIPTION_ID:-}
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
     volumes:
       - backend_logs:/app/logs
     networks:
       - cloud-mgmt-backend
       - cloud-mgmt-frontend
     depends_on:
+      postgres:
+        condition: service_healthy
       prometheus:
         condition: service_healthy
     healthcheck:
@@ -81,17 +123,17 @@ services:
     container_name: cloud-mgmt-frontend
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "3000:80"
     environment:
       NODE_ENV: production
-      NEXT_PUBLIC_API_URL: http://backend:3001
+      REACT_APP_API_URL: ${REACT_APP_API_URL:-}
     networks:
       - cloud-mgmt-frontend
     depends_on:
       backend:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/"]
       interval: 30s
       timeout: 10s
       retries: 3

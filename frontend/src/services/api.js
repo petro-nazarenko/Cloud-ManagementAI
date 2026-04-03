@@ -1,7 +1,8 @@
 import axios from 'axios';
 
-const BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1';
+const BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001/api';
 const TOKEN_KEY = process.env.REACT_APP_TOKEN_KEY || 'cloud_mgmt_token';
+const REFRESH_KEY = 'cloud_mgmt_refresh_token';
 
 const api = axios.create({
   baseURL: BASE_URL,
@@ -24,9 +25,25 @@ api.interceptors.request.use(
 // Response interceptor — handle 401 globally
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
+  async (error) => {
+    const originalRequest = error.config;
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+      const refreshToken = localStorage.getItem(REFRESH_KEY);
+      if (refreshToken) {
+        try {
+          const res = await axios.post(`${BASE_URL}/auth/refresh`, { refreshToken });
+          const newToken = res.data.accessToken;
+          localStorage.setItem(TOKEN_KEY, newToken);
+          originalRequest.headers.Authorization = `Bearer ${newToken}`;
+          return api(originalRequest);
+        } catch {
+          // Refresh failed — clear tokens and redirect to login
+        }
+      }
       localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(REFRESH_KEY);
+      localStorage.removeItem('cloud_mgmt_user');
       window.location.href = '/login';
     }
     return Promise.reject(error);
@@ -36,9 +53,8 @@ api.interceptors.response.use(
 // ── Auth ──────────────────────────────────────────────────────────────────────
 export const authAPI = {
   login: (email, password) => api.post('/auth/login', { email, password }),
-  logout: () => api.post('/auth/logout'),
-  me: () => api.get('/auth/me'),
-  refreshToken: () => api.post('/auth/refresh'),
+  register: (name, email, password, role) => api.post('/auth/register', { name, email, password, role }),
+  refresh: (refreshToken) => api.post('/auth/refresh', { refreshToken }),
 };
 
 // ── Resources ─────────────────────────────────────────────────────────────────
@@ -48,33 +64,32 @@ export const resourcesAPI = {
   create: (data) => api.post('/resources', data),
   update: (id, data) => api.put(`/resources/${id}`, data),
   delete: (id) => api.delete(`/resources/${id}`),
-  sync: () => api.post('/resources/sync'),
 };
 
 // ── Analytics ─────────────────────────────────────────────────────────────────
 export const analyticsAPI = {
-  costTrend: (params) => api.get('/analytics/cost-trend', { params }),
-  costBreakdown: (params) => api.get('/analytics/cost-breakdown', { params }),
-  usageMetrics: (params) => api.get('/analytics/usage', { params }),
-  recommendations: () => api.get('/analytics/recommendations'),
-  summary: () => api.get('/analytics/summary'),
+  costs: (params) => api.get('/analytics/costs', { params }),
+  usage: (params) => api.get('/analytics/usage', { params }),
+  recommendations: (params) => api.get('/analytics/recommendations', { params }),
+  updateRecommendation: (id, status) => api.patch(`/analytics/recommendations/${id}`, { status }),
 };
 
 // ── Providers ─────────────────────────────────────────────────────────────────
 export const providersAPI = {
   list: () => api.get('/providers'),
-  get: (id) => api.get(`/providers/${id}`),
-  connect: (data) => api.post('/providers/connect', data),
-  disconnect: (id) => api.delete(`/providers/${id}`),
-  testConnection: (id) => api.post(`/providers/${id}/test`),
+  health: () => api.get('/providers/health'),
+  resources: (name, params) => api.get(`/providers/${name}/resources`, { params }),
+  deploy: (name, data) => api.post(`/providers/${name}/deploy`, data),
 };
 
-// ── Settings ──────────────────────────────────────────────────────────────────
-export const settingsAPI = {
-  get: () => api.get('/settings'),
-  update: (data) => api.put('/settings', data),
-  notifications: () => api.get('/settings/notifications'),
-  updateNotifications: (data) => api.put('/settings/notifications', data),
+// ── Users / Settings ──────────────────────────────────────────────────────────
+export const usersAPI = {
+  me: () => api.get('/users/me'),
+  updateProfile: (data) => api.put('/users/profile', data),
+  updatePassword: (currentPassword, newPassword) => api.put('/users/password', { currentPassword, newPassword }),
+  updateNotifications: (data) => api.put('/users/notifications', data),
+  updateSettings: (data) => api.put('/users/settings', data),
+  saveCloudCredentials: (provider, credentials) => api.post('/users/cloud-credentials', { provider, credentials }),
 };
 
 export default api;

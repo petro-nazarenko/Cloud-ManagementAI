@@ -1,49 +1,84 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box, Card, CardContent, Grid, Typography, Chip, List,
   ListItem, ListItemAvatar, ListItemText, Avatar, Divider,
-  LinearProgress, Button,
+  LinearProgress, Button, CircularProgress, Alert,
 } from '@mui/material';
 import StorageIcon from '@mui/icons-material/Storage';
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import CloudIcon from '@mui/icons-material/Cloud';
-import ErrorIcon from '@mui/icons-material/Error';
-import AddCircleIcon from '@mui/icons-material/AddCircle';
-import DeleteIcon from '@mui/icons-material/Delete';
-import RefreshIcon from '@mui/icons-material/Refresh';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend,
 } from 'recharts';
 import MetricCard from '../components/MetricCard';
+import { analyticsAPI, resourcesAPI, providersAPI } from '../services/api';
 
-const costTrendData = [
-  { month: 'Jul', aws: 12400, azure: 8200, gcp: 4100 },
-  { month: 'Aug', aws: 13100, azure: 8600, gcp: 4300 },
-  { month: 'Sep', aws: 12800, azure: 9100, gcp: 4800 },
-  { month: 'Oct', aws: 14200, azure: 9400, gcp: 5100 },
-  { month: 'Nov', aws: 13600, azure: 9800, gcp: 5400 },
-  { month: 'Dec', aws: 15200, azure: 10300, gcp: 5800 },
-  { month: 'Jan', aws: 14800, azure: 10100, gcp: 5600 },
-];
-
-const recentActivity = [
-  { id: 1, type: 'created', icon: <AddCircleIcon />, color: 'success.main', resource: 'ec2-prod-api-03', provider: 'AWS', time: '5 min ago', detail: 't3.large • us-east-1' },
-  { id: 2, type: 'alert', icon: <WarningAmberIcon />, color: 'warning.main', resource: 'Cost Anomaly', provider: 'Azure', time: '23 min ago', detail: '+18% spend in eastus' },
-  { id: 3, type: 'deleted', icon: <DeleteIcon />, color: 'error.main', resource: 'old-backup-bucket', provider: 'GCP', time: '1 hr ago', detail: 'us-central1 • 240 GB freed' },
-  { id: 4, type: 'updated', icon: <RefreshIcon />, color: 'info.main', resource: 'rds-mysql-prod', provider: 'AWS', time: '2 hr ago', detail: 'Scaled up to db.r6g.xlarge' },
-  { id: 5, type: 'alert', icon: <ErrorIcon />, color: 'error.main', resource: 'Quota Warning', provider: 'Azure', time: '3 hr ago', detail: 'VM cores at 85% limit' },
-];
-
-const providerHealth = [
-  { name: 'AWS', status: 'healthy', resources: 142, usage: 72, color: '#FF9900' },
-  { name: 'Azure', status: 'healthy', resources: 98, usage: 85, color: '#0078D4' },
-  { name: 'GCP', status: 'warning', resources: 61, usage: 58, color: '#4285F4' },
-];
+const PROVIDER_COLORS = { aws: '#FF9900', azure: '#0078D4', gcp: '#4285F4' };
 
 export default function Dashboard() {
-  const [period] = useState('7d'); // eslint-disable-line no-unused-vars
+  const [costs, setCosts] = useState(null);
+  const [resources, setResources] = useState(null);
+  const [providers, setProviders] = useState([]);
+  const [recommendations, setRecommendations] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const fetchAll = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const [costsRes, resourcesRes, providersRes, recsRes] = await Promise.all([
+          analyticsAPI.costs({ period: '30d' }),
+          resourcesAPI.list({ limit: 5 }),
+          providersAPI.list(),
+          analyticsAPI.recommendations({ status: 'open' }),
+        ]);
+        setCosts(costsRes.data);
+        setResources(resourcesRes.data);
+        setProviders(providersRes.data.providers || []);
+        setRecommendations(recsRes.data.data || []);
+      } catch (err) {
+        setError('Failed to load dashboard data. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchAll();
+  }, []);
+
+  // Build cost trend data from providers breakdown
+  const costTrendData = costs
+    ? costs.breakdown.map((p) => ({
+        name: p.provider.toUpperCase(),
+        total: p.total,
+        services: p.services,
+      }))
+    : [];
+
+  // Build chart-friendly monthly data (use single period as single point)
+  const chartData = costs
+    ? [
+        {
+          month: 'Current',
+          ...(costs.breakdown.reduce((acc, p) => { acc[p.provider] = p.total; return acc; }, {})),
+        },
+      ]
+    : [];
+
+  const totalCost = costs?.grandTotal?.amount || 0;
+  const totalResources = resources?.total || 0;
+  const connectedProviders = providers.filter((p) => p.configured).length;
+
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 300 }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
 
   return (
     <Box>
@@ -58,75 +93,97 @@ export default function Dashboard() {
         <Chip label="Last 30 days" variant="outlined" size="small" />
       </Box>
 
+      {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
+
       {/* Summary cards */}
       <Grid container spacing={3} sx={{ mb: 3 }}>
         <Grid item xs={12} sm={6} lg={3}>
           <MetricCard
             title="Total Resources"
-            value="301"
-            subtitle="Across 3 providers"
+            value={String(totalResources)}
+            subtitle={`Across ${connectedProviders} providers`}
             icon={<StorageIcon />}
             color="primary"
             trend="up"
-            trendValue="+12 this week"
+            trendValue="Live from API"
           />
         </Grid>
         <Grid item xs={12} sm={6} lg={3}>
           <MetricCard
             title="Monthly Cost"
-            value="$30,700"
-            subtitle="Jan 2025 estimate"
+            value={`$${totalCost.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
+            subtitle="Current period estimate"
             icon={<AttachMoneyIcon />}
             color="secondary"
             trend="up"
-            trendValue="+4.2% vs last month"
+            trendValue="Live from API"
           />
         </Grid>
         <Grid item xs={12} sm={6} lg={3}>
           <MetricCard
-            title="Active Alerts"
-            value="7"
-            subtitle="3 critical, 4 warnings"
+            title="Open Recommendations"
+            value={String(recommendations.length)}
+            subtitle="Potential cost savings"
             icon={<WarningAmberIcon />}
             color="warning"
-            trend="down"
-            trendValue="-2 resolved today"
+            trend="flat"
+            trendValue="Check Analytics"
           />
         </Grid>
         <Grid item xs={12} sm={6} lg={3}>
           <MetricCard
             title="Cloud Providers"
-            value="3"
-            subtitle="AWS · Azure · GCP"
+            value={String(providers.length)}
+            subtitle={providers.map((p) => p.name.toUpperCase()).join(' · ')}
             icon={<CloudIcon />}
             color="success"
             trend="flat"
-            trendValue="All connected"
+            trendValue={`${connectedProviders} configured`}
           />
         </Grid>
       </Grid>
 
       <Grid container spacing={3}>
-        {/* Cost Trend Chart */}
+        {/* Cost Breakdown Chart */}
         <Grid item xs={12} lg={8}>
           <Card>
             <CardContent sx={{ p: 3 }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                <Typography variant="h6">Cost Trend</Typography>
-                <Chip label="Monthly" size="small" variant="outlined" />
+                <Typography variant="h6">Cost Breakdown by Provider</Typography>
+                <Chip label="30 days" size="small" variant="outlined" />
               </Box>
-              <ResponsiveContainer width="100%" height={280}>
-                <LineChart data={costTrendData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis dataKey="month" tick={{ fontSize: 12 }} />
-                  <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
-                  <Tooltip formatter={(v) => [`$${v.toLocaleString()}`, '']} />
-                  <Legend />
-                  <Line type="monotone" dataKey="aws" name="AWS" stroke="#FF9900" strokeWidth={2.5} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-                  <Line type="monotone" dataKey="azure" name="Azure" stroke="#0078D4" strokeWidth={2.5} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-                  <Line type="monotone" dataKey="gcp" name="GCP" stroke="#4285F4" strokeWidth={2.5} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-                </LineChart>
-              </ResponsiveContainer>
+              {costs && costs.breakdown.length > 0 ? (
+                <ResponsiveContainer width="100%" height={280}>
+                  <LineChart data={[
+                    costs.breakdown.reduce((acc, p) => {
+                      acc[p.provider] = p.total;
+                      return acc;
+                    }, { month: 'Current' })
+                  ]} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                    <XAxis dataKey="month" tick={{ fontSize: 12 }} />
+                    <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
+                    <Tooltip formatter={(v) => [`$${Number(v).toLocaleString()}`, '']} />
+                    <Legend />
+                    {costs.breakdown.map((p) => (
+                      <Line
+                        key={p.provider}
+                        type="monotone"
+                        dataKey={p.provider}
+                        name={p.provider.toUpperCase()}
+                        stroke={PROVIDER_COLORS[p.provider] || '#666'}
+                        strokeWidth={2.5}
+                        dot={{ r: 4 }}
+                        activeDot={{ r: 6 }}
+                      />
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <Box sx={{ textAlign: 'center', py: 8, color: 'text.secondary' }}>
+                  <Typography>No cost data available. Configure cloud provider credentials to see live data.</Typography>
+                </Box>
+              )}
             </CardContent>
           </Card>
         </Grid>
@@ -135,36 +192,35 @@ export default function Dashboard() {
         <Grid item xs={12} lg={4}>
           <Card sx={{ height: '100%' }}>
             <CardContent sx={{ p: 3 }}>
-              <Typography variant="h6" sx={{ mb: 2 }}>Provider Health</Typography>
+              <Typography variant="h6" sx={{ mb: 2 }}>Provider Status</Typography>
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                {providerHealth.map((p) => (
+                {providers.map((p) => (
                   <Box key={p.name}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: p.color }} />
-                        <Typography variant="body2" fontWeight={600}>{p.name}</Typography>
+                        <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: PROVIDER_COLORS[p.name] || '#999' }} />
+                        <Typography variant="body2" fontWeight={600}>{p.name.toUpperCase()}</Typography>
                         <Chip
-                          label={p.status}
+                          label={p.configured ? 'configured' : 'unconfigured'}
                           size="small"
-                          color={p.status === 'healthy' ? 'success' : 'warning'}
+                          color={p.configured ? 'success' : 'default'}
                           sx={{ height: 18, fontSize: 10 }}
                         />
                       </Box>
-                      <Typography variant="caption" color="text.secondary">
-                        {p.resources} resources
-                      </Typography>
                     </Box>
                     <LinearProgress
                       variant="determinate"
-                      value={p.usage}
+                      value={p.configured ? 100 : 0}
                       sx={{
                         height: 6,
                         borderRadius: 3,
                         bgcolor: 'grey.100',
-                        '& .MuiLinearProgress-bar': { bgcolor: p.color, borderRadius: 3 },
+                        '& .MuiLinearProgress-bar': { bgcolor: p.configured ? PROVIDER_COLORS[p.name] : '#ccc', borderRadius: 3 },
                       }}
                     />
-                    <Typography variant="caption" color="text.secondary">{p.usage}% capacity used</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {p.configured ? 'Ready' : 'Set credentials in Settings'}
+                    </Typography>
                   </Box>
                 ))}
               </Box>
@@ -172,45 +228,43 @@ export default function Dashboard() {
           </Card>
         </Grid>
 
-        {/* Recent Activity */}
-        <Grid item xs={12}>
-          <Card>
-            <CardContent sx={{ p: 3 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                <Typography variant="h6">Recent Activity</Typography>
-                <Button size="small" variant="text">View all</Button>
-              </Box>
-              <List disablePadding>
-                {recentActivity.map((item, idx) => (
-                  <React.Fragment key={item.id}>
-                    {idx > 0 && <Divider component="li" />}
-                    <ListItem alignItems="flex-start" sx={{ px: 0, py: 1.5 }}>
-                      <ListItemAvatar>
-                        <Avatar sx={{ bgcolor: 'transparent', color: item.color, border: '1px solid', borderColor: item.color, width: 36, height: 36 }}>
-                          {item.icon}
-                        </Avatar>
-                      </ListItemAvatar>
-                      <ListItemText
-                        primary={
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Typography variant="body2" fontWeight={600}>{item.resource}</Typography>
-                            <Chip label={item.provider} size="small" variant="outlined" sx={{ height: 18, fontSize: 10 }} />
-                          </Box>
-                        }
-                        secondary={
-                          <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.25 }}>
-                            <Typography variant="caption" color="text.secondary">{item.detail}</Typography>
-                            <Typography variant="caption" color="text.secondary">{item.time}</Typography>
-                          </Box>
-                        }
-                      />
-                    </ListItem>
-                  </React.Fragment>
-                ))}
-              </List>
-            </CardContent>
-          </Card>
-        </Grid>
+        {/* Cost Breakdown per Provider */}
+        {costs && costs.breakdown.length > 0 && (
+          <Grid item xs={12}>
+            <Card>
+              <CardContent sx={{ p: 3 }}>
+                <Typography variant="h6" sx={{ mb: 2 }}>Cost Breakdown</Typography>
+                <List disablePadding>
+                  {costs.breakdown.map((p, idx) => (
+                    <React.Fragment key={p.provider}>
+                      {idx > 0 && <Divider component="li" />}
+                      <ListItem alignItems="flex-start" sx={{ px: 0, py: 1.5 }}>
+                        <ListItemAvatar>
+                          <Avatar sx={{ bgcolor: PROVIDER_COLORS[p.provider] + '22', color: PROVIDER_COLORS[p.provider], border: `1px solid ${PROVIDER_COLORS[p.provider]}44` }}>
+                            <CloudIcon />
+                          </Avatar>
+                        </ListItemAvatar>
+                        <ListItemText
+                          primary={
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <Typography variant="body2" fontWeight={600}>{p.provider.toUpperCase()}</Typography>
+                              <Chip label={`$${p.total.toLocaleString()}`} size="small" color="primary" variant="outlined" sx={{ height: 18, fontSize: 10 }} />
+                            </Box>
+                          }
+                          secondary={
+                            <Typography variant="caption" color="text.secondary">
+                              {p.services.map((s) => `${s.service}: $${s.amount.toLocaleString()}`).join(' · ')}
+                            </Typography>
+                          }
+                        />
+                      </ListItem>
+                    </React.Fragment>
+                  ))}
+                </List>
+              </CardContent>
+            </Card>
+          </Grid>
+        )}
       </Grid>
     </Box>
   );

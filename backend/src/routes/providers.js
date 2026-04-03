@@ -6,6 +6,7 @@ const authenticate = require('../middleware/auth');
 const awsService = require('../services/awsService');
 const azureService = require('../services/azureService');
 const gcpService = require('../services/gcpService');
+const { checkProviderCredentials, healthCheckProviders } = require('../utils/providerHealth');
 
 const router = Router();
 
@@ -42,15 +43,31 @@ const resolveProviderService = (name) => {
 // All provider routes require authentication
 router.use(authenticate);
 
-// GET /api/providers — list supported cloud providers and their status
+// GET /api/providers — list supported cloud providers and their configuration status
 router.get('/', (req, res) => {
+  const DISPLAY_NAMES = { aws: 'Amazon Web Services', azure: 'Microsoft Azure', gcp: 'Google Cloud Platform' };
   res.json({
-    providers: SUPPORTED_PROVIDERS.map((name) => ({
-      name,
-      status: 'available',
-      displayName: { aws: 'Amazon Web Services', azure: 'Microsoft Azure', gcp: 'Google Cloud Platform' }[name],
-    })),
+    providers: SUPPORTED_PROVIDERS.map((name) => {
+      const { configured, missingVars } = checkProviderCredentials(name);
+      return {
+        name,
+        displayName: DISPLAY_NAMES[name],
+        configured,
+        status: configured ? 'available' : 'unconfigured',
+        ...(process.env.NODE_ENV !== 'production' && !configured && { missingVars }),
+      };
+    }),
   });
+});
+
+// GET /api/providers/health — perform live connectivity checks for all providers
+router.get('/health', async (req, res, next) => {
+  try {
+    const results = await healthCheckProviders();
+    res.json({ providers: results });
+  } catch (err) {
+    next(err);
+  }
 });
 
 // GET /api/providers/:name/resources — list resources from a specific provider

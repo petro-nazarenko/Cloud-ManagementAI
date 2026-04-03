@@ -1,13 +1,14 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box, Card, CardContent, Typography, Table, TableBody,
   TableCell, TableContainer, TableHead, TableRow, TablePagination,
   Chip, TextField, InputAdornment, Select, MenuItem, FormControl,
-  InputLabel, Button, IconButton, Tooltip, Skeleton,
+  InputLabel, Button, IconButton, Tooltip, Skeleton, Alert,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import { resourcesAPI } from '../services/api';
 
 const STATUS_COLORS = {
   running: 'success',
@@ -16,61 +17,58 @@ const STATUS_COLORS = {
   terminated: 'default',
   healthy: 'success',
   degraded: 'warning',
+  active: 'success',
+  provisioning: 'warning',
 };
 
-const MOCK_RESOURCES = [
-  { id: 'r1',  provider: 'AWS',   type: 'EC2',          name: 'ec2-prod-api-01',      status: 'running',    region: 'us-east-1',      cost: 142.50 },
-  { id: 'r2',  provider: 'AWS',   type: 'EC2',          name: 'ec2-prod-api-02',      status: 'running',    region: 'us-east-1',      cost: 142.50 },
-  { id: 'r3',  provider: 'AWS',   type: 'EC2',          name: 'ec2-staging-01',       status: 'stopped',    region: 'us-west-2',      cost: 0.00 },
-  { id: 'r4',  provider: 'AWS',   type: 'RDS',          name: 'rds-mysql-prod',       status: 'running',    region: 'us-east-1',      cost: 310.80 },
-  { id: 'r5',  provider: 'AWS',   type: 'S3',           name: 'prod-assets-bucket',   status: 'healthy',    region: 'us-east-1',      cost: 28.40 },
-  { id: 'r6',  provider: 'AWS',   type: 'Lambda',       name: 'process-events-fn',    status: 'running',    region: 'us-east-1',      cost: 4.20 },
-  { id: 'r7',  provider: 'AWS',   type: 'EKS',          name: 'prod-k8s-cluster',     status: 'running',    region: 'us-east-1',      cost: 720.00 },
-  { id: 'r8',  provider: 'AWS',   type: 'CloudFront',   name: 'cdn-distribution',     status: 'running',    region: 'global',         cost: 55.10 },
-  { id: 'r9',  provider: 'Azure', type: 'VM',           name: 'vm-prod-web-01',       status: 'running',    region: 'eastus',         cost: 98.40 },
-  { id: 'r10', provider: 'Azure', type: 'VM',           name: 'vm-prod-web-02',       status: 'running',    region: 'eastus',         cost: 98.40 },
-  { id: 'r11', provider: 'Azure', type: 'SQL Database', name: 'azure-sql-prod',       status: 'running',    region: 'eastus',         cost: 240.00 },
-  { id: 'r12', provider: 'Azure', type: 'AKS',          name: 'aks-prod-cluster',     status: 'running',    region: 'westeurope',     cost: 580.00 },
-  { id: 'r13', provider: 'Azure', type: 'Storage',      name: 'prod-storage-account', status: 'healthy',    region: 'eastus',         cost: 18.60 },
-  { id: 'r14', provider: 'Azure', type: 'Cosmos DB',    name: 'cosmosdb-analytics',   status: 'running',    region: 'eastus2',        cost: 420.00 },
-  { id: 'r15', provider: 'Azure', type: 'VM',           name: 'vm-dev-01',            status: 'stopped',    region: 'eastus',         cost: 0.00 },
-  { id: 'r16', provider: 'GCP',   type: 'GCE',          name: 'gce-prod-api-01',      status: 'running',    region: 'us-central1',    cost: 88.20 },
-  { id: 'r17', provider: 'GCP',   type: 'GKE',          name: 'gke-prod-cluster',     status: 'running',    region: 'us-central1',    cost: 490.00 },
-  { id: 'r18', provider: 'GCP',   type: 'Cloud SQL',    name: 'cloudsql-postgres',    status: 'running',    region: 'us-central1',    cost: 195.60 },
-  { id: 'r19', provider: 'GCP',   type: 'GCS',          name: 'ml-training-data',     status: 'healthy',    region: 'us-central1',    cost: 12.80 },
-  { id: 'r20', provider: 'GCP',   type: 'Cloud Run',    name: 'api-gateway-service',  status: 'running',    region: 'us-central1',    cost: 22.40 },
-  { id: 'r21', provider: 'GCP',   type: 'GCE',          name: 'gce-staging-01',       status: 'pending',    region: 'europe-west1',   cost: 44.10 },
-];
-
-const PROVIDER_COLORS = { AWS: '#FF9900', Azure: '#0078D4', GCP: '#4285F4' };
+const PROVIDER_COLORS = { aws: '#FF9900', azure: '#0078D4', gcp: '#4285F4' };
+const PROVIDER_DISPLAY = { aws: 'AWS', azure: 'Azure', gcp: 'GCP' };
 
 export default function Resources() {
   const [search, setSearch] = useState('');
-  const [providerFilter, setProviderFilter] = useState('All');
-  const [statusFilter, setStatusFilter] = useState('All');
+  const [providerFilter, setProviderFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [loading, setLoading] = useState(false);
+  const [data, setData] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [error, setError] = useState('');
 
-  const filtered = useMemo(() => {
-    return MOCK_RESOURCES.filter((r) => {
-      const matchProvider = providerFilter === 'All' || r.provider === providerFilter;
-      const matchStatus = statusFilter === 'All' || r.status === statusFilter;
-      const matchSearch =
-        !search ||
-        r.name.toLowerCase().includes(search.toLowerCase()) ||
-        r.type.toLowerCase().includes(search.toLowerCase()) ||
-        r.region.toLowerCase().includes(search.toLowerCase());
-      return matchProvider && matchStatus && matchSearch;
-    });
-  }, [search, providerFilter, statusFilter]);
-
-  const paginated = filtered.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
-
-  const handleRefresh = () => {
+  const fetchResources = useCallback(async () => {
     setLoading(true);
-    setTimeout(() => setLoading(false), 1200);
-  };
+    setError('');
+    try {
+      const params = {
+        page: page + 1,
+        limit: rowsPerPage,
+        ...(providerFilter && { provider: providerFilter }),
+        ...(statusFilter && { status: statusFilter }),
+      };
+      const res = await resourcesAPI.list(params);
+      let rows = res.data.data || [];
+      if (search) {
+        const q = search.toLowerCase();
+        rows = rows.filter((r) =>
+          r.name?.toLowerCase().includes(q) ||
+          r.type?.toLowerCase().includes(q) ||
+          r.region?.toLowerCase().includes(q)
+        );
+      }
+      setData(rows);
+      setTotal(res.data.total || 0);
+    } catch (err) {
+      setError('Failed to load resources. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }, [page, rowsPerPage, providerFilter, statusFilter, search]);
+
+  useEffect(() => {
+    fetchResources();
+  }, [fetchResources]);
+
+  const handleRefresh = () => fetchResources();
 
   return (
     <Box>
@@ -78,7 +76,7 @@ export default function Resources() {
         <Box>
           <Typography variant="h5" fontWeight={700}>Resources</Typography>
           <Typography variant="body2" color="text.secondary">
-            {filtered.length} of {MOCK_RESOURCES.length} resources
+            {total} resources across all providers
           </Typography>
         </Box>
         <Tooltip title="Sync resources">
@@ -87,11 +85,14 @@ export default function Resources() {
             startIcon={<RefreshIcon />}
             onClick={handleRefresh}
             size="small"
+            disabled={loading}
           >
             Sync
           </Button>
         </Tooltip>
       </Box>
+
+      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
       <Card>
         <CardContent sx={{ p: 3 }}>
@@ -118,10 +119,10 @@ export default function Resources() {
                 label="Provider"
                 onChange={(e) => { setProviderFilter(e.target.value); setPage(0); }}
               >
-                <MenuItem value="All">All Providers</MenuItem>
-                <MenuItem value="AWS">AWS</MenuItem>
-                <MenuItem value="Azure">Azure</MenuItem>
-                <MenuItem value="GCP">GCP</MenuItem>
+                <MenuItem value="">All Providers</MenuItem>
+                <MenuItem value="aws">AWS</MenuItem>
+                <MenuItem value="azure">Azure</MenuItem>
+                <MenuItem value="gcp">GCP</MenuItem>
               </Select>
             </FormControl>
             <FormControl size="small" sx={{ minWidth: 140 }}>
@@ -131,11 +132,11 @@ export default function Resources() {
                 label="Status"
                 onChange={(e) => { setStatusFilter(e.target.value); setPage(0); }}
               >
-                <MenuItem value="All">All Statuses</MenuItem>
+                <MenuItem value="">All Statuses</MenuItem>
                 <MenuItem value="running">Running</MenuItem>
                 <MenuItem value="stopped">Stopped</MenuItem>
                 <MenuItem value="pending">Pending</MenuItem>
-                <MenuItem value="healthy">Healthy</MenuItem>
+                <MenuItem value="active">Active</MenuItem>
               </Select>
             </FormControl>
           </Box>
@@ -155,74 +156,77 @@ export default function Resources() {
               </TableHead>
               <TableBody>
                 {loading
-                  ? Array.from({ length: 6 }).map((_, i) => (
+                  ? Array.from({ length: rowsPerPage }).map((_, i) => (
                       <TableRow key={i}>
                         {Array.from({ length: 7 }).map((_, j) => (
                           <TableCell key={j}><Skeleton variant="text" /></TableCell>
                         ))}
                       </TableRow>
                     ))
-                  : paginated.map((resource) => (
-                      <TableRow
-                        key={resource.id}
-                        hover
-                        sx={{ '&:last-child td': { border: 0 } }}
-                      >
-                        <TableCell>
-                          <Chip
-                            label={resource.provider}
-                            size="small"
-                            sx={{
-                              bgcolor: PROVIDER_COLORS[resource.provider] + '22',
-                              color: PROVIDER_COLORS[resource.provider],
-                              fontWeight: 600,
-                              border: `1px solid ${PROVIDER_COLORS[resource.provider]}44`,
-                            }}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Typography variant="body2" color="text.secondary">{resource.type}</Typography>
-                        </TableCell>
-                        <TableCell>
-                          <Typography variant="body2" fontWeight={500}>{resource.name}</Typography>
-                        </TableCell>
-                        <TableCell>
-                          <Chip
-                            label={resource.status}
-                            size="small"
-                            color={STATUS_COLORS[resource.status] || 'default'}
-                            variant="outlined"
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Typography variant="body2" color="text.secondary">{resource.region}</Typography>
-                        </TableCell>
-                        <TableCell align="right">
-                          <Typography variant="body2" fontWeight={600}>
-                            {resource.cost === 0 ? '—' : `$${resource.cost.toFixed(2)}`}
-                          </Typography>
-                        </TableCell>
-                        <TableCell align="center">
-                          <Tooltip title="Open details">
-                            <IconButton size="small">
-                              <OpenInNewIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                  : data.map((resource) => {
+                      const provColor = PROVIDER_COLORS[resource.provider] || '#666';
+                      return (
+                        <TableRow
+                          key={resource.id}
+                          hover
+                          sx={{ '&:last-child td': { border: 0 } }}
+                        >
+                          <TableCell>
+                            <Chip
+                              label={PROVIDER_DISPLAY[resource.provider] || resource.provider}
+                              size="small"
+                              sx={{
+                                bgcolor: provColor + '22',
+                                color: provColor,
+                                fontWeight: 600,
+                                border: `1px solid ${provColor}44`,
+                              }}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2" color="text.secondary">{resource.type}</Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2" fontWeight={500}>{resource.name}</Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Chip
+                              label={resource.status}
+                              size="small"
+                              color={STATUS_COLORS[resource.status] || 'default'}
+                              variant="outlined"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2" color="text.secondary">{resource.region}</Typography>
+                          </TableCell>
+                          <TableCell align="right">
+                            <Typography variant="body2" fontWeight={600}>
+                              {resource.monthlyCost ? `$${resource.monthlyCost.toFixed(2)}` : '—'}
+                            </Typography>
+                          </TableCell>
+                          <TableCell align="center">
+                            <Tooltip title="Open details">
+                              <IconButton size="small">
+                                <OpenInNewIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
               </TableBody>
             </Table>
           </TableContainer>
 
           <TablePagination
             component="div"
-            count={filtered.length}
+            count={total}
             page={page}
             onPageChange={(_, p) => setPage(p)}
             rowsPerPage={rowsPerPage}
             onRowsPerPageChange={(e) => { setRowsPerPage(+e.target.value); setPage(0); }}
-            rowsPerPageOptions={[5, 10, 25]}
+            rowsPerPageOptions={[5, 10, 25, 50]}
           />
         </CardContent>
       </Card>
