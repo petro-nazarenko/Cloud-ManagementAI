@@ -3,7 +3,8 @@
 const { Router } = require('express');
 const Joi = require('joi');
 const authenticate = require('../middleware/auth');
-const { authorizeRoles } = require('../middleware/authorize');
+const { authorizePermissions } = require('../middleware/authorize');
+const { PERMISSIONS } = require('../middleware/permissions');
 const awsService = require('../services/awsService');
 const azureService = require('../services/azureService');
 const gcpService = require('../services/gcpService');
@@ -64,7 +65,7 @@ router.get('/', (req, res) => {
 });
 
 // GET /api/providers/health — perform live connectivity checks for all providers
-router.get('/health', authorizeRoles('admin', 'operator'), async (req, res, next) => {
+router.get('/health', authorizePermissions(PERMISSIONS.providersHealthRead), async (req, res, next) => {
   try {
     const cached = await getLatestJobResult(JOB_NAMES.providerHealthRefresh);
     if (cached) {
@@ -83,7 +84,7 @@ router.get('/health', authorizeRoles('admin', 'operator'), async (req, res, next
 });
 
 // POST /api/providers/health/refresh — queue provider health refresh job
-router.post('/health/refresh', authorizeRoles('admin', 'operator'), async (req, res, next) => {
+router.post('/health/refresh', authorizePermissions(PERMISSIONS.providersHealthRefresh), async (req, res, next) => {
   try {
     const job = await enqueueProviderHealthRefresh({
       userId: req.user.sub,
@@ -101,7 +102,7 @@ router.post('/health/refresh', authorizeRoles('admin', 'operator'), async (req, 
 });
 
 // GET /api/providers/health/jobs/:jobId — provider health job status
-router.get('/health/jobs/:jobId', authorizeRoles('admin', 'operator'), async (req, res, next) => {
+router.get('/health/jobs/:jobId', authorizePermissions(PERMISSIONS.analyticsJobsRead), async (req, res, next) => {
   try {
     const job = await getAnalyticsJobStatus(req.params.jobId);
     if (!job || job.name !== JOB_NAMES.providerHealthRefresh) {
@@ -130,7 +131,7 @@ router.get('/:name/resources', async (req, res, next) => {
 });
 
 // POST /api/providers/:name/deploy — deploy a resource on a specific provider
-router.post('/:name/deploy', authorizeRoles('admin', 'operator'), validate(deploySchema), async (req, res, next) => {
+router.post('/:name/deploy', authorizePermissions(PERMISSIONS.providersDeploy), validate(deploySchema), async (req, res, next) => {
   const { name } = req.params;
   const service = resolveProviderService(name);
   if (!service) {

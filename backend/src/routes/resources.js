@@ -3,7 +3,8 @@
 const { Router } = require('express');
 const Joi = require('joi');
 const authenticate = require('../middleware/auth');
-const { authorizeRoles } = require('../middleware/authorize');
+const { authorizePermissions } = require('../middleware/authorize');
+const { PERMISSIONS } = require('../middleware/permissions');
 const auditLogger = require('../middleware/auditLogger');
 const resourceController = require('../controllers/resourceController');
 
@@ -37,15 +38,15 @@ router.use(authenticate);
 router.get('/', resourceController.listResources);
 
 // POST /api/resources — create a new resource
-router.post('/', authorizeRoles('admin', 'operator'), validate(resourceSchema), auditLogger('create', 'resource'), resourceController.createResource);
+router.post('/', authorizePermissions(PERMISSIONS.resourcesWrite), validate(resourceSchema), auditLogger('create', 'resource'), resourceController.createResource);
 
 // GET /api/resources/:id — get a single resource
 router.get('/:id', resourceController.getResource);
 
 // PUT /api/resources/:id — update a resource
-router.put('/:id', authorizeRoles('admin', 'operator'), validate(resourceSchema.fork(['name', 'type', 'provider', 'region'], (f) => f.optional())), auditLogger('update', 'resource'), resourceController.updateResource);
+router.put('/:id', authorizePermissions(PERMISSIONS.resourcesWrite), validate(resourceSchema.fork(['name', 'type', 'provider', 'region'], (f) => f.optional())), auditLogger('update', 'resource'), resourceController.updateResource);
 
 // DELETE /api/resources/:id — delete a resource
-router.delete('/:id', authorizeRoles('admin', 'operator'), auditLogger('delete', 'resource'), resourceController.deleteResource);
+router.delete('/:id', authorizePermissions(PERMISSIONS.resourcesDelete), auditLogger('delete', 'resource'), resourceController.deleteResource);
 
 module.exports = router;

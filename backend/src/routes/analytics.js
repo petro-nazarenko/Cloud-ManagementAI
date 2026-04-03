@@ -3,7 +3,8 @@
 const { Router } = require('express');
 const Joi = require('joi');
 const authenticate = require('../middleware/auth');
-const { authorizeRoles } = require('../middleware/authorize');
+const { authorizePermissions } = require('../middleware/authorize');
+const { PERMISSIONS } = require('../middleware/permissions');
 const analyticsController = require('../controllers/analyticsController');
 
 const router = Router();
@@ -28,7 +29,7 @@ router.use(authenticate);
 router.get('/costs', analyticsController.getCosts);
 
 // POST /api/analytics/costs/refresh — queue cost sync job
-router.post('/costs/refresh', authorizeRoles('admin', 'operator'), analyticsController.queueCostSync);
+router.post('/costs/refresh', authorizePermissions(PERMISSIONS.analyticsCostsRefresh), analyticsController.queueCostSync);
 
 // GET /api/analytics/usage — resource utilisation metrics
 router.get('/usage', analyticsController.getUsage);
@@ -37,12 +38,12 @@ router.get('/usage', analyticsController.getUsage);
 router.get('/recommendations', analyticsController.getRecommendations);
 
 // POST /api/analytics/recommendations/refresh — queue recommendation refresh job
-router.post('/recommendations/refresh', authorizeRoles('admin', 'operator'), analyticsController.queueRecommendationRefresh);
+router.post('/recommendations/refresh', authorizePermissions(PERMISSIONS.analyticsRecommendationsRefresh), analyticsController.queueRecommendationRefresh);
 
 // GET /api/analytics/jobs/:jobId — get analytics job status
-router.get('/jobs/:jobId', authorizeRoles('admin', 'operator'), analyticsController.getAnalyticsJob);
+router.get('/jobs/:jobId', authorizePermissions(PERMISSIONS.analyticsJobsRead), analyticsController.getAnalyticsJob);
 
 // PATCH /api/analytics/recommendations/:id — update recommendation status (apply/dismiss)
-router.patch('/recommendations/:id', authorizeRoles('admin', 'operator'), validate(recStatusSchema), analyticsController.updateRecommendation);
+router.patch('/recommendations/:id', authorizePermissions(PERMISSIONS.analyticsRecommendationsWrite), validate(recStatusSchema), analyticsController.updateRecommendation);
 
 module.exports = router;
