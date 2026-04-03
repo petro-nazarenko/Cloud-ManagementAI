@@ -1,0 +1,41 @@
+{
+  "name": "cloud-management-ai-backend",
+  "version": "1.0.0",
+  "description": "Cloud Management AI Backend API",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "test": "jest --coverage"
+  },
+  "dependencies": {
+    "@azure/arm-resources": "^5.2.0",
+    "@azure/identity": "^4.13.1",
+    "@google-cloud/resource-manager": "^4.1.4",
+    "aws-sdk": "^2.1509.0",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-rate-limit": "^7.1.5",
+    "helmet": "^7.1.0",
+    "joi": "^17.11.0",
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.0",
+    "prom-client": "^15.1.0",
+    "winston": "^3.11.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "nodemon": "^3.0.2",
+    "supertest": "^6.3.3"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "coverageDirectory": "coverage",
+    "collectCoverageFrom": [
+      "src/**/*.js",
+      "!src/tests/**"
+    ]
+  }
+}

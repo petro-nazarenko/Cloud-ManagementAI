@@ -1,0 +1,147 @@
+---
+- name: Deploy Cloud Management AI Platform
+  hosts: webservers
+  become: true
+  gather_facts: true
+
+  vars:
+    app_dir: /opt/cloud-management-ai
+    compose_file: "{{ app_dir }}/docker-compose.yml"
+    docker_compose_version: "2.24.7"
+    backend_image: "cloud-mgmt/backend:{{ app_version | default('latest') }}"
+    frontend_image: "cloud-mgmt/frontend:{{ app_version | default('latest') }}"
+
+  pre_tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: true
+        cache_valid_time: 3600
+      when: ansible_os_family == "Debian"
+
+    - name: Update yum cache
+      yum:
+        update_cache: true
+      when: ansible_os_family == "RedHat"
+
+  roles:
+    - docker
+
+  tasks:
+    - name: Create application directory
+      file:
+        path: "{{ app_dir }}"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0755"
+
+    - name: Copy docker-compose file
+      copy:
+        src: "{{ playbook_dir }}/../../../docker-compose.yml"
+        dest: "{{ compose_file }}"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0644"
+      notify: Restart services
+
+    - name: Copy monitoring configuration
+      copy:
+        src: "{{ playbook_dir }}/../../../monitoring/"
+        dest: "{{ app_dir }}/monitoring/"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0644"
+
+    - name: Create .env file from template
+      template:
+        src: "{{ playbook_dir }}/../templates/env.j2"
+        dest: "{{ app_dir }}/.env"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0600"
+
+    - name: Log in to container registry
+      community.docker.docker_login:
+        registry_url: "{{ registry_url | default('docker.io') }}"
+        username: "{{ registry_username }}"
+        password: "{{ registry_password }}"
+      when: registry_username is defined
+      no_log: true
+
+    - name: Pull backend image
+      community.docker.docker_image:
+        name: "{{ backend_image }}"
+        source: pull
+        force_source: true
+
+    - name: Pull frontend image
+      community.docker.docker_image:
+        name: "{{ frontend_image }}"
+        source: pull
+        force_source: true
+
+    - name: Start services with docker-compose
+      community.docker.docker_compose_v2:
+        project_src: "{{ app_dir }}"
+        files:
+          - docker-compose.yml
+        state: present
+        pull: always
+
+    - name: Wait for backend to become healthy
+      uri:
+        url: "http://localhost:3001/health"
+        status_code: 200
+      register: result
+      until: result.status == 200
+      retries: 30
+      delay: 10
+
+    - name: Wait for frontend to become healthy
+      uri:
+        url: "http://localhost:3000/"
+        status_code: 200
+      register: result
+      until: result.status == 200
+      retries: 20
+      delay: 10
+
+    - name: Verify Prometheus is reachable
+      uri:
+        url: "http://localhost:9090/-/healthy"
+        status_code: 200
+      register: result
+      until: result.status == 200
+      retries: 10
+      delay: 5
+
+    - name: Verify Grafana is reachable
+      uri:
+        url: "http://localhost:3002/api/health"
+        status_code: 200
+      register: result
+      until: result.status == 200
+      retries: 10
+      delay: 5
+
+  post_tasks:
+    - name: Display service status
+      community.docker.docker_compose_v2:
+        project_src: "{{ app_dir }}"
+        state: present
+      register: compose_status
+
+    - name: Print deployment summary
+      debug:
+        msg:
+          - "Deployment complete!"
+          - "Frontend : http://{{ ansible_host }}:3000"
+          - "Backend  : http://{{ ansible_host }}:3001"
+          - "Prometheus: http://{{ ansible_host }}:9090"
+          - "Grafana  : http://{{ ansible_host }}:3002"
+
+  handlers:
+    - name: Restart services
+      community.docker.docker_compose_v2:
+        project_src: "{{ app_dir }}"
+        state: restarted

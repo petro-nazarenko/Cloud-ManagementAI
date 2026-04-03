@@ -1,0 +1,126 @@
+---
+- name: Create monitoring directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - /opt/monitoring
+    - /opt/monitoring/prometheus
+    - /opt/monitoring/grafana/provisioning/datasources
+    - /opt/monitoring/grafana/provisioning/dashboards
+    - /opt/monitoring/grafana/dashboards
+    - /var/lib/prometheus
+    - /var/lib/grafana
+
+- name: Set Prometheus data directory ownership
+  file:
+    path: /var/lib/prometheus
+    owner: "65534"
+    group: "65534"
+    recurse: true
+
+- name: Set Grafana data directory ownership
+  file:
+    path: /var/lib/grafana
+    owner: "472"
+    group: "472"
+    recurse: true
+
+- name: Deploy Prometheus configuration
+  template:
+    src: prometheus.yml.j2
+    dest: /opt/monitoring/prometheus/prometheus.yml
+    mode: "0644"
+  notify: Reload Prometheus config
+
+- name: Deploy Prometheus alert rules
+  template:
+    src: alert_rules.yml.j2
+    dest: /opt/monitoring/prometheus/alert_rules.yml
+    mode: "0644"
+  notify: Reload Prometheus config
+
+- name: Deploy Grafana datasource configuration
+  copy:
+    src: grafana_datasource.yml
+    dest: /opt/monitoring/grafana/provisioning/datasources/prometheus.yml
+    mode: "0644"
+  notify: Restart Grafana
+
+- name: Deploy Grafana dashboard provisioning
+  copy:
+    src: grafana_dashboards.yml
+    dest: /opt/monitoring/grafana/provisioning/dashboards/dashboard.yml
+    mode: "0644"
+  notify: Restart Grafana
+
+- name: Start Prometheus container
+  community.docker.docker_container:
+    name: prometheus
+    image: "prom/prometheus:v{{ prometheus_version | default('2.51.0') }}"
+    state: started
+    restart_policy: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - /opt/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - /opt/monitoring/prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+      - /var/lib/prometheus:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time={{ prometheus_retention | default('30d') }}"
+      - "--web.enable-lifecycle"
+    networks:
+      - name: monitoring
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+- name: Start Grafana container
+  community.docker.docker_container:
+    name: grafana
+    image: "grafana/grafana:{{ grafana_version | default('10.4.0') }}"
+    state: started
+    restart_policy: unless-stopped
+    ports:
+      - "3002:3000"
+    volumes:
+      - /opt/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - /opt/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - /var/lib/grafana:/var/lib/grafana
+    env:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: "{{ grafana_admin_password | default('changeme') }}"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    networks:
+      - name: monitoring
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+- name: Wait for Prometheus to be healthy
+  uri:
+    url: http://localhost:9090/-/healthy
+    status_code: 200
+  register: result
+  until: result.status == 200
+  retries: 20
+  delay: 5
+
+- name: Wait for Grafana to be healthy
+  uri:
+    url: http://localhost:3002/api/health
+    status_code: 200
+  register: result
+  until: result.status == 200
+  retries: 20
+  delay: 5
