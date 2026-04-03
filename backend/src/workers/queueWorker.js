@@ -12,6 +12,7 @@ const { runRecommendationRefreshJob } = require('../jobs/recommendationRefreshJo
 const { runProviderHealthRefreshJob } = require('../jobs/providerHealthRefreshJob');
 const { runCostSyncJob } = require('../jobs/costSyncJob');
 const { setLatestJobResult } = require('../queue/resultCache');
+const metricsService = require('../services/metricsService');
 
 const handlers = {
   [JOB_NAMES.recommendationRefresh]: runRecommendationRefreshJob,
@@ -30,14 +31,31 @@ const start = async () => {
   const worker = new Worker(
     'analytics',
     async (job) => {
+      const startedAt = process.hrtime.bigint();
+      metricsService.queueJobsInFlight.inc({ job_name: job.name });
+
       const handler = handlers[job.name];
       if (!handler) {
         throw new Error(`No job handler registered for '${job.name}'.`);
       }
 
-      const result = await handler(job.data);
-      await setLatestJobResult(job.name, result);
-      return result;
+      try {
+        const result = await handler(job.data);
+        await setLatestJobResult(job.name, result);
+
+        const durationSeconds = Number(process.hrtime.bigint() - startedAt) / 1e9;
+        metricsService.queueJobDuration.observe({ job_name: job.name, status: 'completed' }, durationSeconds);
+        metricsService.queueJobsProcessedTotal.inc({ job_name: job.name, status: 'completed' });
+
+        return result;
+      } catch (error) {
+        const durationSeconds = Number(process.hrtime.bigint() - startedAt) / 1e9;
+        metricsService.queueJobDuration.observe({ job_name: job.name, status: 'failed' }, durationSeconds);
+        metricsService.queueJobsProcessedTotal.inc({ job_name: job.name, status: 'failed' });
+        throw error;
+      } finally {
+        metricsService.queueJobsInFlight.dec({ job_name: job.name });
+      }
     },
     {
       connection: getRedisConnection(),

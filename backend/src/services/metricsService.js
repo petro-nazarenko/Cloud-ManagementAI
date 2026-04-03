@@ -37,10 +37,35 @@ const cloudProviderErrors = new client.Counter({
   registers: [register],
 });
 
+const queueJobsProcessedTotal = new client.Counter({
+  name: 'queue_jobs_processed_total',
+  help: 'Total number of processed queue jobs by status',
+  labelNames: ['job_name', 'status'],
+  registers: [register],
+});
+
+const queueJobDuration = new client.Histogram({
+  name: 'queue_job_duration_seconds',
+  help: 'Queue job processing latency in seconds',
+  labelNames: ['job_name', 'status'],
+  buckets: [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30],
+  registers: [register],
+});
+
+const queueJobsInFlight = new client.Gauge({
+  name: 'queue_jobs_in_flight',
+  help: 'Number of queue jobs currently being processed',
+  labelNames: ['job_name'],
+  registers: [register],
+});
+
 module.exports = {
   register,
   httpRequestsTotal,
   httpRequestDuration,
   activeCloudResources,
   cloudProviderErrors,
+  queueJobsProcessedTotal,
+  queueJobDuration,
+  queueJobsInFlight,
 };
