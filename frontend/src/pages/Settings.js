@@ -16,6 +16,7 @@ export default function Settings() {
   const { user, logout } = useAuth();
   const [saved, setSaved] = useState(false);
   const [saveMsg, setSaveMsg] = useState('');
+  const [loading, setLoading] = useState(false);
 const LOGOUT_DELAY_MS = 3000;
 
   const [profile, setProfile] = useState({
@@ -359,4 +360,3 @@ const LOGOUT_DELAY_MS = 3000;
     </Box>
   );
 }
-
