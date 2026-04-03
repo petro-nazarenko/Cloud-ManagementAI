@@ -3,19 +3,26 @@
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const { User } = require('../models');
+const { ENCRYPTION_KEY_PATTERN } = require('../utils/config');
 
 const SALT_ROUNDS = 10;
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
 const ALGORITHM = 'aes-256-gcm';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const encrypt = (text) => {
-  if (!ENCRYPTION_KEY) {
+  const encryptionKey = process.env.ENCRYPTION_KEY;
+
+  if (!encryptionKey) {
     throw new Error('ENCRYPTION_KEY environment variable is required to store cloud credentials.');
   }
+
+  if (!ENCRYPTION_KEY_PATTERN.test(encryptionKey)) {
+    throw new Error('ENCRYPTION_KEY must be exactly 64 hex characters.');
+  }
+
   const iv = crypto.randomBytes(16);
-  const key = Buffer.from(ENCRYPTION_KEY.slice(0, 64), 'hex');
+  const key = Buffer.from(encryptionKey, 'hex');
   const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
   let encrypted = cipher.update(text, 'utf8', 'hex');
   encrypted += cipher.final('hex');

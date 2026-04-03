@@ -17,6 +17,8 @@ volumes:
     driver: local
   postgres_data:
     driver: local
+  redis_data:
+    driver: local
 
 services:
   postgres:
@@ -39,6 +41,24 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
+
+  redis:
+    image: redis:7-alpine
+    container_name: cloud-mgmt-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - cloud-mgmt-backend
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   prometheus:
     image: prom/prometheus:v2.51.0
@@ -87,8 +107,11 @@ services:
       DB_USER: ${DB_USER:-cloudmgmt_admin}
       DB_PASSWORD: ${DB_PASSWORD:-changeme}
       DB_SSL: "false"
+      REDIS_URL: redis://redis:6379
+      QUEUE_MODE: redis
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
       # Cloud provider credentials (optional — configure to enable live data)
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
@@ -106,6 +129,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       prometheus:
         condition: service_healthy
     healthcheck:
@@ -114,6 +139,45 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
+
+  backend-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: production
+    container_name: cloud-mgmt-backend-worker
+    restart: unless-stopped
+    command: ["npm", "run", "worker"]
+    environment:
+      NODE_ENV: production
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-cloudmgmt}
+      DB_USER: ${DB_USER:-cloudmgmt_admin}
+      DB_PASSWORD: ${DB_PASSWORD:-changeme}
+      DB_SSL: "false"
+      REDIS_URL: redis://redis:6379
+      QUEUE_MODE: redis
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
+      AZURE_TENANT_ID: ${AZURE_TENANT_ID:-}
+      AZURE_CLIENT_ID: ${AZURE_CLIENT_ID:-}
+      AZURE_CLIENT_SECRET: ${AZURE_CLIENT_SECRET:-}
+      AZURE_SUBSCRIPTION_ID: ${AZURE_SUBSCRIPTION_ID:-}
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
+    volumes:
+      - backend_logs:/app/logs
+    networks:
+      - cloud-mgmt-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   frontend:
     build:

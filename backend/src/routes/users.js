@@ -3,6 +3,7 @@
 const { Router } = require('express');
 const Joi = require('joi');
 const authenticate = require('../middleware/auth');
+const { authorizeRoles } = require('../middleware/authorize');
 const userController = require('../controllers/userController');
 
 const router = Router();
@@ -66,6 +67,6 @@ router.put('/notifications', validate(notificationsSchema), userController.updat
 router.put('/settings', validate(settingsSchema), userController.updateSettings);
 
 // POST /api/users/cloud-credentials — store encrypted provider credentials
-router.post('/cloud-credentials', validate(credentialsSchema), userController.saveCloudCredentials);
+router.post('/cloud-credentials', authorizeRoles('admin', 'operator'), validate(credentialsSchema), userController.saveCloudCredentials);
 
 module.exports = router;

@@ -3,6 +3,7 @@
 const { Router } = require('express');
 const Joi = require('joi');
 const authenticate = require('../middleware/auth');
+const { authorizeRoles } = require('../middleware/authorize');
 const awsService = require('../services/awsService');
 const azureService = require('../services/azureService');
 const gcpService = require('../services/gcpService');
@@ -61,7 +62,7 @@ router.get('/', (req, res) => {
 });
 
 // GET /api/providers/health — perform live connectivity checks for all providers
-router.get('/health', async (req, res, next) => {
+router.get('/health', authorizeRoles('admin', 'operator'), async (req, res, next) => {
   try {
     const results = await healthCheckProviders();
     res.json({ providers: results });
@@ -86,7 +87,7 @@ router.get('/:name/resources', async (req, res, next) => {
 });
 
 // POST /api/providers/:name/deploy — deploy a resource on a specific provider
-router.post('/:name/deploy', validate(deploySchema), async (req, res, next) => {
+router.post('/:name/deploy', authorizeRoles('admin', 'operator'), validate(deploySchema), async (req, res, next) => {
   const { name } = req.params;
   const service = resolveProviderService(name);
   if (!service) {

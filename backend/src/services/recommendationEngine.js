@@ -153,8 +153,10 @@ const runEngine = async () => {
     }
 
     logger.info(`Recommendation engine: ${created} new recommendations created, ${skipped} skipped (already open).`);
+    return { created, skipped };
   } catch (err) {
     logger.error(`Recommendation engine error: ${err.message}`);
+    throw err;
   }
 };
 

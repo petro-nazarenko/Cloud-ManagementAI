@@ -50,6 +50,10 @@ const User = sequelize.define('User', {
       slackIntegration: false,
     },
   },
+  config: {
+    type: DataTypes.JSON,
+    defaultValue: {},
+  },
 }, {
   tableName: 'users',
   timestamps: true,

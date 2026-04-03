@@ -50,7 +50,7 @@ describe('Auth endpoints', () => {
   it('POST /api/auth/register creates a new user and returns tokens', async () => {
     const res = await request(app)
       .post('/api/auth/register')
-      .send({ name: 'Alice', email: `alice-${Date.now()}@example.com`, password: 'secret123', role: 'viewer' });
+      .send({ name: 'Alice', email: `alice-${Date.now()}@example.com`, password: 'secret123', role: 'admin' });
     expect(res.status).toBe(201);
     expect(res.body).toHaveProperty('accessToken');
     expect(res.body).toHaveProperty('refreshToken');
@@ -95,9 +95,11 @@ describe('Auth endpoints', () => {
 
 describe('Resources API', () => {
   let token;
+  let viewerToken;
 
   beforeAll(() => {
     token = makeToken();
+    viewerToken = makeToken({ role: 'viewer' });
   });
 
   it('GET /api/resources returns 401 without token', async () => {
@@ -146,6 +148,14 @@ describe('Resources API', () => {
     createdId = res.body.id;
   });
 
+  it('POST /api/resources returns 403 for viewer role', async () => {
+    const res = await request(app)
+      .post('/api/resources')
+      .set('Authorization', `Bearer ${viewerToken}`)
+      .send({ name: 'viewer-instance', type: 'ec2', provider: 'aws', region: 'us-west-2' });
+    expect(res.status).toBe(403);
+  });
+
   it('POST /api/resources returns 400 for missing required fields', async () => {
     const res = await request(app)
       .post('/api/resources')
@@ -189,7 +199,13 @@ describe('Resources API', () => {
 
 describe('Analytics API', () => {
   let token;
-  beforeAll(() => { token = makeToken(); });
+  let viewerToken;
+  let queuedJobId;
+
+  beforeAll(() => {
+    token = makeToken();
+    viewerToken = makeToken({ role: 'viewer' });
+  });
 
   it('GET /api/analytics/costs returns cost breakdown', async () => {
     const res = await request(app)
@@ -226,6 +242,31 @@ describe('Analytics API', () => {
     expect(res.body.data.length).toBeGreaterThan(0);
   });
 
+  it('POST /api/analytics/recommendations/refresh queues a refresh job', async () => {
+    const res = await request(app)
+      .post('/api/analytics/recommendations/refresh')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(202);
+    expect(res.body.job).toHaveProperty('id');
+    expect(res.body.job).toHaveProperty('state');
+    queuedJobId = res.body.job.id;
+  });
+
+  it('GET /api/analytics/jobs/:jobId returns analytics job status', async () => {
+    const res = await request(app)
+      .get(`/api/analytics/jobs/${queuedJobId}`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe(queuedJobId);
+  });
+
+  it('POST /api/analytics/recommendations/refresh returns 403 for viewer role', async () => {
+    const res = await request(app)
+      .post('/api/analytics/recommendations/refresh')
+      .set('Authorization', `Bearer ${viewerToken}`);
+    expect(res.status).toBe(403);
+  });
+
   it('PATCH /api/analytics/recommendations/:id updates status', async () => {
     const listRes = await request(app)
       .get('/api/analytics/recommendations')
@@ -238,6 +279,19 @@ describe('Analytics API', () => {
       .send({ status: 'dismissed' });
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('dismissed');
+  });
+
+  it('PATCH /api/analytics/recommendations/:id returns 403 for viewer role', async () => {
+    const listRes = await request(app)
+      .get('/api/analytics/recommendations')
+      .set('Authorization', `Bearer ${token}`);
+    const recId = listRes.body.data[0].id;
+
+    const res = await request(app)
+      .patch(`/api/analytics/recommendations/${recId}`)
+      .set('Authorization', `Bearer ${viewerToken}`)
+      .send({ status: 'dismissed' });
+    expect(res.status).toBe(403);
   });
 
   it('PATCH /api/analytics/recommendations/:id returns 400 for invalid status', async () => {
@@ -264,7 +318,12 @@ describe('Analytics API', () => {
 
 describe('Providers API', () => {
   let token;
-  beforeAll(() => { token = makeToken(); });
+  let viewerToken;
+
+  beforeAll(() => {
+    token = makeToken();
+    viewerToken = makeToken({ role: 'viewer' });
+  });
 
   it('GET /api/providers lists all providers', async () => {
     const res = await request(app)
@@ -302,6 +361,14 @@ describe('Providers API', () => {
       .send({ resourceType: 'ec2', region: 'us-east-1', name: 'test' });
     expect(res.status).toBe(404);
   });
+
+  it('POST /api/providers/aws/deploy returns 403 for viewer role', async () => {
+    const res = await request(app)
+      .post('/api/providers/aws/deploy')
+      .set('Authorization', `Bearer ${viewerToken}`)
+      .send({ resourceType: 'ec2', region: 'us-east-1', name: 'test' });
+    expect(res.status).toBe(403);
+  });
 });
 
 describe('Users API', () => {
@@ -309,6 +376,7 @@ describe('Users API', () => {
   let adminId;
 
   beforeAll(async () => {
+    process.env.ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
     const res = await request(app).post('/api/auth/login').send({ email: 'admin@example.com', password: 'admin1234' });
     token = res.body.accessToken;
     adminId = res.body.user.id;
@@ -347,6 +415,22 @@ describe('Users API', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({ currency: 'EUR', costAlertThreshold: 2000 });
     expect(res.status).toBe(200);
+  });
+
+  it('POST /api/users/cloud-credentials stores encrypted provider credentials', async () => {
+    const res = await request(app)
+      .post('/api/users/cloud-credentials')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ provider: 'aws', credentials: { accessKeyId: 'test-key', secretAccessKey: 'test-secret' } });
+    expect(res.status).toBe(200);
+    expect(res.body.provider).toBe('aws');
+
+    const meRes = await request(app)
+      .get('/api/users/me')
+      .set('Authorization', `Bearer ${token}`);
+    expect(meRes.status).toBe(200);
+    expect(meRes.body.config.cloudCredentials.aws).toMatch(/:/);
+    expect(meRes.body.config.cloudCredentials.aws).not.toContain('test-secret');
   });
 
   it('PUT /api/users/password returns 401 for wrong current password', async () => {

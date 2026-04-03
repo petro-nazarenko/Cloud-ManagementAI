@@ -16,7 +16,8 @@ const usersRouter = require('./routes/users');
 const errorHandler = require('./middleware/errorHandler');
 const metricsService = require('./services/metricsService');
 const logger = require('./utils/logger');
-const { connect, sync } = require('./utils/db');
+const { connect, migrate, sync } = require('./utils/db');
+const { shouldSeedDemoData, validateConfig } = require('./utils/config');
 const { seedAdmin } = require('./controllers/authController');
 const { seedResources } = require('./controllers/resourceController');
 const { seedRecommendations } = require('./services/recommendationEngine');
@@ -120,11 +121,21 @@ app.use(errorHandler);
 if (require.main === module) {
   (async () => {
     try {
+      validateConfig();
       await connect();
-      await sync();
-      await seedAdmin();
-      await seedResources();
-      await seedRecommendations();
+
+      if (process.env.NODE_ENV === 'production') {
+        await migrate();
+      } else {
+        await sync();
+      }
+
+      if (shouldSeedDemoData()) {
+        await seedAdmin();
+        await seedResources();
+        await seedRecommendations();
+      }
+
       app.listen(PORT, () => {
         logger.info(`Cloud Management AI backend running on port ${PORT}`);
       });

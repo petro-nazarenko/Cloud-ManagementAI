@@ -1,8 +1,7 @@
 'use strict';
 
-const { Op } = require('sequelize');
 const { Recommendation } = require('../models');
-const { runEngine } = require('../services/recommendationEngine');
+const { enqueueRecommendationRefresh, getAnalyticsJobStatus } = require('../queue/analyticsQueue');
 
 /**
  * Returns mock cost data structured like a real cloud billing API.
@@ -74,11 +73,6 @@ const getRecommendations = async (req, res, next) => {
   try {
     const { status = 'open', provider, severity } = req.query;
 
-    // Refresh open recommendations from the engine on each request
-    if (!status || status === 'open') {
-      await runEngine();
-    }
-
     const where = {};
     if (status) where.status = status;
     if (provider) where.provider = provider;
@@ -99,6 +93,36 @@ const getRecommendations = async (req, res, next) => {
       total: recommendations.length,
       totalEstimatedMonthlySavings: { amount: parseFloat(totalSavings.toFixed(2)), currency: 'USD' },
     });
+  } catch (err) {
+    next(err);
+  }
+};
+
+const queueRecommendationRefresh = async (req, res, next) => {
+  try {
+    const job = await enqueueRecommendationRefresh({
+      userId: req.user.sub,
+      email: req.user.email,
+      role: req.user.role,
+    });
+
+    res.status(202).json({
+      message: 'Recommendation refresh queued.',
+      job,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+const getAnalyticsJob = async (req, res, next) => {
+  try {
+    const job = await getAnalyticsJobStatus(req.params.jobId);
+    if (!job) {
+      return res.status(404).json({ error: `Job '${req.params.jobId}' not found.` });
+    }
+
+    res.json(job);
   } catch (err) {
     next(err);
   }
@@ -133,4 +157,11 @@ const updateRecommendation = async (req, res, next) => {
   }
 };
 
-module.exports = { getCosts, getUsage, getRecommendations, updateRecommendation };
+module.exports = {
+  getCosts,
+  getUsage,
+  getRecommendations,
+  queueRecommendationRefresh,
+  getAnalyticsJob,
+  updateRecommendation,
+};

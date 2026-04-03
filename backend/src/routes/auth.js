@@ -22,7 +22,6 @@ const registerSchema = Joi.object({
   name: Joi.string().min(2).max(64).required(),
   email: Joi.string().email().required(),
   password: Joi.string().min(8).required(),
-  role: Joi.string().valid('admin', 'operator', 'viewer').default('viewer'),
 });
 
 const loginSchema = Joi.object({

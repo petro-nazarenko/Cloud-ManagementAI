@@ -3,8 +3,9 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { User } = require('../models');
+const { DEFAULT_JWT_SECRET } = require('../utils/config');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-production';
+const JWT_SECRET = process.env.JWT_SECRET || DEFAULT_JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '1h';
 const JWT_REFRESH_EXPIRES_IN = process.env.JWT_REFRESH_EXPIRES_IN || '7d';
 const SALT_ROUNDS = 10;
@@ -35,7 +36,7 @@ const signTokens = (user) => {
 
 const register = async (req, res, next) => {
   try {
-    const { name, email, password, role } = req.body;
+    const { name, email, password } = req.body;
 
     const existing = await User.findOne({ where: { email } });
     if (existing) {
@@ -47,7 +48,7 @@ const register = async (req, res, next) => {
       name,
       email,
       passwordHash,
-      role: role || 'viewer',
+      role: 'viewer',
     });
 
     const tokens = signTokens(user);

@@ -1,6 +1,8 @@
 'use strict';
 
+const path = require('path');
 const { Sequelize } = require('sequelize');
+const { Umzug, SequelizeStorage } = require('umzug');
 const logger = require('./logger');
 
 const isTest = process.env.NODE_ENV === 'test';
@@ -76,6 +78,53 @@ const sync = async (options = {}) => {
   logger.info('Database models synced.');
 };
 
+const createMigrator = () => {
+  return new Umzug({
+    migrations: {
+      glob: path.join(__dirname, '../../migrations/*.js'),
+    },
+    context: sequelize.getQueryInterface(),
+    storage: new SequelizeStorage({ sequelize }),
+    logger: {
+      info: (message) => logger.info(message),
+      warn: (message) => logger.warn(message),
+      error: (message) => logger.error(message),
+      debug: (message) => logger.debug(message),
+    },
+  });
+};
+
+const migrate = async () => {
+  const migrator = createMigrator();
+  const executed = await migrator.up();
+
+  if (executed.length === 0) {
+    logger.info('Database migrations already up to date.');
+  } else {
+    logger.info(`Applied ${executed.length} database migration(s).`);
+  }
+
+  return executed;
+};
+
+const pendingMigrations = async () => {
+  const migrator = createMigrator();
+  return migrator.pending();
+};
+
+const revertLastMigration = async () => {
+  const migrator = createMigrator();
+  const reverted = await migrator.down();
+
+  if (!reverted) {
+    logger.info('No database migration to revert.');
+    return null;
+  }
+
+  logger.info(`Reverted migration '${reverted.name}'.`);
+  return reverted;
+};
+
 /**
  * Gracefully close the connection pool.
  */
@@ -84,4 +133,4 @@ const close = async () => {
   logger.info('Database connection closed.');
 };
 
-module.exports = { sequelize, connect, sync, close };
+module.exports = { sequelize, connect, sync, migrate, pendingMigrations, revertLastMigration, close };

@@ -3,6 +3,7 @@
 const { Router } = require('express');
 const Joi = require('joi');
 const authenticate = require('../middleware/auth');
+const { authorizeRoles } = require('../middleware/authorize');
 const analyticsController = require('../controllers/analyticsController');
 
 const router = Router();
@@ -32,7 +33,13 @@ router.get('/usage', analyticsController.getUsage);
 // GET /api/analytics/recommendations — AI-generated cost-saving recommendations
 router.get('/recommendations', analyticsController.getRecommendations);
 
+// POST /api/analytics/recommendations/refresh — queue recommendation refresh job
+router.post('/recommendations/refresh', authorizeRoles('admin', 'operator'), analyticsController.queueRecommendationRefresh);
+
+// GET /api/analytics/jobs/:jobId — get analytics job status
+router.get('/jobs/:jobId', authorizeRoles('admin', 'operator'), analyticsController.getAnalyticsJob);
+
 // PATCH /api/analytics/recommendations/:id — update recommendation status (apply/dismiss)
-router.patch('/recommendations/:id', validate(recStatusSchema), analyticsController.updateRecommendation);
+router.patch('/recommendations/:id', authorizeRoles('admin', 'operator'), validate(recStatusSchema), analyticsController.updateRecommendation);
 
 module.exports = router;
