@@ -1,0 +1,72 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background-color: #0f172a;
+  color: #e2e8f0;
+}
+
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-header {
+  background: linear-gradient(135deg, #1e3a5f 0%, #0f172a 100%);
+  padding: 3rem 2rem;
+  text-align: center;
+  border-bottom: 1px solid #1e293b;
+}
+
+.app-header h1 {
+  font-size: 2.5rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+.app-header p {
+  color: #94a3b8;
+  font-size: 1.1rem;
+}
+
+.app-main {
+  flex: 1;
+  padding: 2rem;
+  max-width: 800px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.status-card {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  margin-top: 1.5rem;
+}
+
+.status-card h2 {
+  font-size: 1.25rem;
+  margin-bottom: 1rem;
+  color: #7dd3fc;
+}
+
+.status-card ul {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.status-card li {
+  color: #cbd5e1;
+}
+
+.status-error {
+  color: #f87171;
+}
