@@ -72,6 +72,9 @@ export const analyticsAPI = {
   usage: (params) => api.get('/analytics/usage', { params }),
   recommendations: (params) => api.get('/analytics/recommendations', { params }),
   updateRecommendation: (id, status) => api.patch(`/analytics/recommendations/${id}`, { status }),
+  refreshCosts: () => api.post('/analytics/costs/refresh'),
+  refreshRecommendations: () => api.post('/analytics/recommendations/refresh'),
+  jobStatus: (jobId) => api.get(`/analytics/jobs/${jobId}`),
 };
 
 // ── Providers ─────────────────────────────────────────────────────────────────

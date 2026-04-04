@@ -1,14 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Box, Card, CardContent, Grid, Typography, Chip, List,
   ListItem, ListItemText, ListItemIcon, Avatar, Divider,
   ToggleButton, ToggleButtonGroup, CircularProgress, Alert, Button,
+  Tooltip,
 } from '@mui/material';
 import LightbulbIcon from '@mui/icons-material/Lightbulb';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import StorageIcon from '@mui/icons-material/Storage';
 import TimerIcon from '@mui/icons-material/Timer';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import RefreshIcon from '@mui/icons-material/Refresh';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartTooltip,
   ResponsiveContainer, Legend, AreaChart, Area,
@@ -32,6 +34,47 @@ export default function Analytics() {
   const [error, setError] = useState('');
   const [usagePeriod, setUsagePeriod] = useState('30d');
   const [applyingRec, setApplyingRec] = useState(null);
+
+  // Job polling state: { costs: null | 'pending' | 'done' | 'error', recs: … }
+  const [refreshing, setRefreshing] = useState({ costs: null, recs: null });
+  const pollTimers = useRef({});
+
+  const stopPoll = (key) => {
+    clearInterval(pollTimers.current[key]);
+    delete pollTimers.current[key];
+  };
+
+  // Poll a job until it is completed / failed, then reload the relevant data.
+  const pollJob = useCallback((key, jobId, onSuccess) => {
+    stopPoll(key);
+    pollTimers.current[key] = setInterval(async () => {
+      try {
+        const res = await analyticsAPI.jobStatus(jobId);
+        const { state } = res.data;
+        if (state === 'completed') {
+          stopPoll(key);
+          setRefreshing((prev) => ({ ...prev, [key]: 'done' }));
+          await onSuccess();
+          // Reset indicator after a brief success flash
+          setTimeout(() => setRefreshing((prev) => ({ ...prev, [key]: null })), 2000);
+        } else if (state === 'failed') {
+          stopPoll(key);
+          setRefreshing((prev) => ({ ...prev, [key]: 'error' }));
+          setTimeout(() => setRefreshing((prev) => ({ ...prev, [key]: null })), 3000);
+        }
+      } catch {
+        stopPoll(key);
+        setRefreshing((prev) => ({ ...prev, [key]: 'error' }));
+        setTimeout(() => setRefreshing((prev) => ({ ...prev, [key]: null })), 3000);
+      }
+    }, 1500);
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    const timers = pollTimers.current;
+    return () => Object.values(timers).forEach(clearInterval);
+  }, []);
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -77,6 +120,58 @@ export default function Analytics() {
     } finally {
       setApplyingRec(null);
     }
+  };
+
+  const handleRefreshCosts = async () => {
+    setRefreshing((prev) => ({ ...prev, costs: 'pending' }));
+    try {
+      const res = await analyticsAPI.refreshCosts();
+      const jobId = res.data?.job?.id;
+      if (!jobId) {
+        // Inline mode: job already ran; reload immediately
+        const costsRes = await analyticsAPI.costs({ period: '30d' });
+        setCosts(costsRes.data);
+        setRefreshing((prev) => ({ ...prev, costs: 'done' }));
+        setTimeout(() => setRefreshing((prev) => ({ ...prev, costs: null })), 2000);
+        return;
+      }
+      pollJob('costs', jobId, async () => {
+        const costsRes = await analyticsAPI.costs({ period: '30d' });
+        setCosts(costsRes.data);
+      });
+    } catch {
+      setRefreshing((prev) => ({ ...prev, costs: 'error' }));
+      setTimeout(() => setRefreshing((prev) => ({ ...prev, costs: null })), 3000);
+    }
+  };
+
+  const handleRefreshRecommendations = async () => {
+    setRefreshing((prev) => ({ ...prev, recs: 'pending' }));
+    try {
+      const res = await analyticsAPI.refreshRecommendations();
+      const jobId = res.data?.job?.id;
+      if (!jobId) {
+        const recsRes = await analyticsAPI.recommendations({ status: 'open' });
+        setRecommendations(recsRes.data.data || []);
+        setRefreshing((prev) => ({ ...prev, recs: 'done' }));
+        setTimeout(() => setRefreshing((prev) => ({ ...prev, recs: null })), 2000);
+        return;
+      }
+      pollJob('recs', jobId, async () => {
+        const recsRes = await analyticsAPI.recommendations({ status: 'open' });
+        setRecommendations(recsRes.data.data || []);
+      });
+    } catch {
+      setRefreshing((prev) => ({ ...prev, recs: 'error' }));
+      setTimeout(() => setRefreshing((prev) => ({ ...prev, recs: null })), 3000);
+    }
+  };
+
+  const refreshIcon = (key) => {
+    const state = refreshing[key];
+    if (state === 'pending') return <CircularProgress size={14} color="inherit" />;
+    if (state === 'done') return <CheckCircleIcon fontSize="small" />;
+    return <RefreshIcon fontSize="small" />;
   };
 
   // Build cost breakdown data for bar chart
@@ -167,7 +262,23 @@ export default function Analytics() {
         <Grid item xs={12} lg={7}>
           <Card>
             <CardContent sx={{ p: 3 }}>
-              <Typography variant="h6" sx={{ mb: 3 }}>Cost Breakdown by Service</Typography>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                <Typography variant="h6">Cost Breakdown by Service</Typography>
+                <Tooltip title={costs?.refreshedAt ? `Last synced: ${new Date(costs.refreshedAt).toLocaleString()}` : 'Refresh cost data'}>
+                  <span>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={handleRefreshCosts}
+                      disabled={refreshing.costs === 'pending'}
+                      startIcon={refreshIcon('costs')}
+                      color={refreshing.costs === 'error' ? 'error' : 'primary'}
+                    >
+                      Refresh
+                    </Button>
+                  </span>
+                </Tooltip>
+              </Box>
               {costBreakdownData.length > 0 ? (
                 <ResponsiveContainer width="100%" height={280}>
                   <BarChart data={costBreakdownData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
@@ -272,11 +383,23 @@ export default function Analytics() {
             <CardContent sx={{ p: 3 }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                 <Typography variant="h6">Optimization Recommendations</Typography>
-                <Chip
-                  label={`~$${totalSavings.toLocaleString(undefined, { maximumFractionDigits: 0 })} potential savings`}
-                  color="success"
-                  size="small"
-                />
+                <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                  <Chip
+                    label={`~$${totalSavings.toLocaleString(undefined, { maximumFractionDigits: 0 })} potential savings`}
+                    color="success"
+                    size="small"
+                  />
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={handleRefreshRecommendations}
+                    disabled={refreshing.recs === 'pending'}
+                    startIcon={refreshIcon('recs')}
+                    color={refreshing.recs === 'error' ? 'error' : 'primary'}
+                  >
+                    Refresh
+                  </Button>
+                </Box>
               </Box>
               {recommendations.length === 0 ? (
                 <Box sx={{ textAlign: 'center', py: 4, color: 'text.secondary' }}>

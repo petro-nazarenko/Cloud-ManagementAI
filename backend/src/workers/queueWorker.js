@@ -12,6 +12,7 @@ const { runRecommendationRefreshJob } = require('../jobs/recommendationRefreshJo
 const { runProviderHealthRefreshJob } = require('../jobs/providerHealthRefreshJob');
 const { runCostSyncJob } = require('../jobs/costSyncJob');
 const { setLatestJobResult } = require('../queue/resultCache');
+const { registerScheduledJobs } = require('../queue/analyticsQueue');
 const metricsService = require('../services/metricsService');
 
 const handlers = {
@@ -70,6 +71,9 @@ const start = async () => {
   worker.on('failed', (job, error) => {
     logger.error(`Queue job '${job?.name}' (${job?.id}) failed: ${error.message}`);
   });
+
+  // Register repeatable scheduler entries — idempotent, safe on every startup.
+  await registerScheduledJobs();
 
   const shutdown = async () => {
     await worker.close();

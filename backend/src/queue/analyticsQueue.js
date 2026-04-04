@@ -118,6 +118,37 @@ const enqueueRecommendationRefresh = async (requestedBy) => enqueueAnalyticsJob(
 const enqueueProviderHealthRefresh = async (requestedBy) => enqueueAnalyticsJob(JOB_NAMES.providerHealthRefresh, { requestedBy });
 const enqueueCostSync = async (requestedBy) => enqueueAnalyticsJob(JOB_NAMES.costSync, { requestedBy });
 
+// Cron-like repeat intervals (milliseconds)
+const SCHEDULES = {
+  [JOB_NAMES.providerHealthRefresh]: 5 * 60 * 1000,      //  5 minutes
+  [JOB_NAMES.costSync]:              6 * 60 * 60 * 1000,  //  6 hours
+  [JOB_NAMES.recommendationRefresh]: 60 * 60 * 1000,      //  1 hour
+};
+
+/**
+ * Register repeatable BullMQ job schedulers.
+ * Idempotent — safe to call on every worker startup and will upsert rather than
+ * create duplicate schedulers.
+ * No-op when QUEUE_MODE is not redis.
+ */
+const registerScheduledJobs = async () => {
+  if (isInlineQueueMode()) {
+    logger.info('Skipping scheduled job registration (inline queue mode).');
+    return;
+  }
+
+  const queue = getAnalyticsQueue();
+
+  for (const [jobName, everyMs] of Object.entries(SCHEDULES)) {
+    await queue.upsertJobScheduler(
+      `scheduled:${jobName}`,
+      { every: everyMs },
+      { name: jobName, data: { source: 'scheduler' } },
+    );
+    logger.info(`Registered scheduler for '${jobName}' every ${everyMs / 1000}s.`);
+  }
+};
+
 module.exports = {
   enqueueAnalyticsJob,
   enqueueCostSync,
@@ -126,4 +157,5 @@ module.exports = {
   getAnalyticsJobStatus,
   getAnalyticsQueue,
   getLatestJobResult,
+  registerScheduledJobs,
 };
