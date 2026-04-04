@@ -1,0 +1,28 @@
+---
+# defaults/main.yml — override any of these in host_vars, group_vars, or
+# by passing extra vars: -e db_backup_dest=/mnt/nfs/backups
+
+# ── Database connection ──────────────────────────────────────────────────────
+db_host: "{{ lookup('env', 'DB_HOST') | default('postgres', true) }}"
+db_port: "{{ lookup('env', 'DB_PORT') | default('5432', true) }}"
+db_name: "{{ lookup('env', 'DB_NAME') | default('cloudmgmt', true) }}"
+db_user: "{{ lookup('env', 'DB_USER') | default('cloudmgmt_admin', true) }}"
+db_password: "{{ lookup('env', 'DB_PASSWORD') | default('changeme', true) }}"
+
+# ── Backup destination ───────────────────────────────────────────────────────
+db_backup_dest: "/var/backups/cloudmgmt"
+db_backup_filename_prefix: "cloudmgmt_backup"
+db_backup_compress: true           # gzip the dump file
+
+# ── Retention ───────────────────────────────────────────────────────────────
+db_backup_retention_days: 30       # delete local dumps older than this
+
+# ── S3 upload (optional) ────────────────────────────────────────────────────
+db_backup_s3_enabled: false
+db_backup_s3_bucket: ""            # e.g. my-company-backups
+db_backup_s3_prefix: "db-backups/cloudmgmt"
+db_backup_s3_region: "us-east-1"
+
+# ── Restore ─────────────────────────────────────────────────────────────────
+# Path to the dump file to restore (can be .sql or .sql.gz)
+db_restore_file: ""

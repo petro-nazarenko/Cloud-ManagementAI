@@ -31,7 +31,10 @@ const ROLE_PERMISSIONS = {
     PERMISSIONS.usersCloudCredentialsWrite,
     PERMISSIONS.auditLogsRead,
   ],
-  viewer: [],
+  viewer: [
+    PERMISSIONS.providersHealthRead,
+    PERMISSIONS.analyticsJobsRead,
+  ],
 };
 
 const getRolePermissions = (role) => ROLE_PERMISSIONS[role] || [];

@@ -1,7 +1,7 @@
 'use strict';
 
 const { Recommendation } = require('../models');
-const { buildCostsSnapshot } = require('../services/costService');
+const { buildCostsSnapshot, fetchRealCosts } = require('../services/costService');
 const {
   enqueueCostSync,
   enqueueRecommendationRefresh,
@@ -34,8 +34,8 @@ const getCosts = async (req, res, next) => {
       });
     }
 
-    const snapshot = buildCostsSnapshot(period, provider);
-    res.json({ ...snapshot, source: 'fallback-mock' });
+    const snapshot = await fetchRealCosts(period, provider);
+    res.json({ ...snapshot, source: snapshot.breakdown.some((b) => b.source === 'live') ? 'live' : 'fallback-mock' });
   } catch (err) {
     next(err);
   }

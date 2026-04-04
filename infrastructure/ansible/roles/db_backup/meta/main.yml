@@ -1,0 +1,9 @@
+---
+# meta/main.yml
+galaxy_info:
+  role_name: db_backup
+  author: cloud-management-ai
+  description: PostgreSQL database backup and restore for Cloud ManagementAI
+  min_ansible_version: "2.15"
+
+dependencies: []

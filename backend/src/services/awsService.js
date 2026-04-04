@@ -1,70 +1,38 @@
 'use strict';
 
-const AWS = require('aws-sdk');
+const { EC2Client, DescribeInstancesCommand } = require('@aws-sdk/client-ec2');
+const { S3Client, ListBucketsCommand } = require('@aws-sdk/client-s3');
+const { RDSClient, DescribeDBInstancesCommand } = require('@aws-sdk/client-rds');
+const { LambdaClient, ListFunctionsCommand } = require('@aws-sdk/client-lambda');
+const { ECSClient, ListClustersCommand, DescribeClustersCommand } = require('@aws-sdk/client-ecs');
+const { CloudFormationClient, CreateStackCommand } = require('@aws-sdk/client-cloudformation');
+const { CostExplorerClient, GetCostAndUsageCommand } = require('@aws-sdk/client-cost-explorer');
 const logger = require('../utils/logger');
 
-const getEC2Client = (region) =>
-  new AWS.EC2({
-    region: region || process.env.AWS_DEFAULT_REGION || 'us-east-1',
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-    sessionToken: process.env.AWS_SESSION_TOKEN,
-  });
-
-const getS3Client = () =>
-  new AWS.S3({
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-    sessionToken: process.env.AWS_SESSION_TOKEN,
-  });
-
-const getCostExplorerClient = () =>
-  new AWS.CostExplorer({
-    region: 'us-east-1',
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-    sessionToken: process.env.AWS_SESSION_TOKEN,
-  });
-
-const getRDSClient = (region) =>
-  new AWS.RDS({
-    region: region || process.env.AWS_DEFAULT_REGION || 'us-east-1',
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-    sessionToken: process.env.AWS_SESSION_TOKEN,
-  });
-
-const getLambdaClient = (region) =>
-  new AWS.Lambda({
-    region: region || process.env.AWS_DEFAULT_REGION || 'us-east-1',
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-    sessionToken: process.env.AWS_SESSION_TOKEN,
-  });
-
-const getECSClient = (region) =>
-  new AWS.ECS({
-    region: region || process.env.AWS_DEFAULT_REGION || 'us-east-1',
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-    sessionToken: process.env.AWS_SESSION_TOKEN,
-  });
-
-const getCloudFormationClient = (region) =>
-  new AWS.CloudFormation({
-    region: region || process.env.AWS_DEFAULT_REGION || 'us-east-1',
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-    sessionToken: process.env.AWS_SESSION_TOKEN,
-  });
+/**
+ * Build a base client configuration.
+ * If explicit env-var credentials are present they are used; otherwise the
+ * AWS SDK v3 default credential-provider chain handles them (IAM roles, etc.).
+ */
+const getClientConfig = (region) => {
+  const config = { region: region || process.env.AWS_DEFAULT_REGION || 'us-east-1' };
+  if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+    config.credentials = {
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+      ...(process.env.AWS_SESSION_TOKEN && { sessionToken: process.env.AWS_SESSION_TOKEN }),
+    };
+  }
+  return config;
+};
 
 /**
  * List all EC2 instances in the given region (or default region).
  */
 const listEC2Instances = async (region) => {
-  const ec2 = getEC2Client(region);
+  const ec2 = new EC2Client(getClientConfig(region));
   try {
-    const data = await ec2.describeInstances().promise();
+    const data = await ec2.send(new DescribeInstancesCommand({}));
     const instances = [];
     for (const reservation of data.Reservations || []) {
       for (const inst of reservation.Instances || []) {
@@ -91,9 +59,9 @@ const listEC2Instances = async (region) => {
  * List all S3 buckets.
  */
 const listS3Buckets = async () => {
-  const s3 = getS3Client();
+  const s3 = new S3Client(getClientConfig());
   try {
-    const data = await s3.listBuckets().promise();
+    const data = await s3.send(new ListBucketsCommand({}));
     return (data.Buckets || []).map((b) => ({
       id: b.Name,
       name: b.Name,
@@ -111,9 +79,9 @@ const listS3Buckets = async () => {
  * List all RDS database instances.
  */
 const listRDSInstances = async (region) => {
-  const rds = getRDSClient(region);
+  const rds = new RDSClient(getClientConfig(region));
   try {
-    const data = await rds.describeDBInstances().promise();
+    const data = await rds.send(new DescribeDBInstancesCommand({}));
     return (data.DBInstances || []).map((db) => ({
       id: db.DBInstanceIdentifier,
       name: db.DBInstanceIdentifier,
@@ -136,12 +104,12 @@ const listRDSInstances = async (region) => {
  * List all Lambda functions.
  */
 const listLambdaFunctions = async (region) => {
-  const lambda = getLambdaClient(region);
+  const lambda = new LambdaClient(getClientConfig(region));
   try {
     const functions = [];
     let marker;
     do {
-      const data = await lambda.listFunctions({ Marker: marker }).promise();
+      const data = await lambda.send(new ListFunctionsCommand({ Marker: marker }));
       for (const fn of data.Functions || []) {
         functions.push({
           id: fn.FunctionArn,
@@ -168,11 +136,11 @@ const listLambdaFunctions = async (region) => {
  * List all ECS clusters.
  */
 const listECSClusters = async (region) => {
-  const ecs = getECSClient(region);
+  const ecs = new ECSClient(getClientConfig(region));
   try {
-    const listData = await ecs.listClusters().promise();
+    const listData = await ecs.send(new ListClustersCommand({}));
     if (!listData.clusterArns || listData.clusterArns.length === 0) return [];
-    const data = await ecs.describeClusters({ clusters: listData.clusterArns }).promise();
+    const data = await ecs.send(new DescribeClustersCommand({ clusters: listData.clusterArns }));
     return (data.clusters || []).map((c) => ({
       id: c.clusterArn,
       name: c.clusterName,
@@ -192,16 +160,17 @@ const listECSClusters = async (region) => {
 
 /**
  * Fetch AWS cost data for a given time range using Cost Explorer.
+ * Returns an array of ResultsByTime objects.
  */
 const getCosts = async (startDate, endDate) => {
-  const ce = getCostExplorerClient();
+  const ce = new CostExplorerClient({ ...getClientConfig(), region: 'us-east-1' });
   try {
-    const data = await ce.getCostAndUsage({
+    const data = await ce.send(new GetCostAndUsageCommand({
       TimePeriod: { Start: startDate, End: endDate },
       Granularity: 'MONTHLY',
       Metrics: ['UnblendedCost'],
       GroupBy: [{ Type: 'DIMENSION', Key: 'SERVICE' }],
-    }).promise();
+    }));
     return data.ResultsByTime || [];
   } catch (err) {
     logger.warn(`AWS Cost Explorer failed: ${err.message}`);
@@ -234,7 +203,7 @@ const listResources = async (query = {}) => {
  */
 const deployResource = async (config) => {
   logger.info(`AWS deploy requested: ${JSON.stringify(config)}`);
-  const cf = getCloudFormationClient(config.region);
+  const cf = new CloudFormationClient(getClientConfig(config.region));
   const stackName = `cloud-mgmt-${config.name}-${Date.now()}`;
   try {
     const params = {
@@ -251,7 +220,7 @@ const deployResource = async (config) => {
       Tags: Object.entries(config.tags || {}).map(([k, v]) => ({ Key: k, Value: v })),
       OnFailure: 'ROLLBACK',
     };
-    const data = await cf.createStack(params).promise();
+    const data = await cf.send(new CreateStackCommand(params));
     return {
       deploymentId: data.StackId || stackName,
       status: 'initiated',
@@ -275,3 +244,5 @@ module.exports = {
   listEC2Instances, listS3Buckets, listRDSInstances, listLambdaFunctions, listECSClusters,
   getCosts, listResources, deployResource,
 };
+
+

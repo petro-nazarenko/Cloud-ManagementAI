@@ -213,7 +213,7 @@ describe('Analytics — job queue (inline mode)', () => {
     expect(res.status).toBe(404);
   });
 
-  it('GET /api/analytics/jobs/:jobId returns 403 for viewer', async () => {
+  it('GET /api/analytics/jobs/:jobId is accessible to viewer (analyticsJobsRead)', async () => {
     const queueRes = await request(app)
       .post('/api/analytics/costs/refresh')
       .set('Authorization', `Bearer ${token}`);
@@ -222,6 +222,7 @@ describe('Analytics — job queue (inline mode)', () => {
     const res = await request(app)
       .get(`/api/analytics/jobs/${jobId}`)
       .set('Authorization', `Bearer ${viewerToken}`);
-    expect(res.status).toBe(403);
+    // viewer has analyticsJobsRead permission — should NOT be 403
+    expect(res.status).not.toBe(403);
   });
 });

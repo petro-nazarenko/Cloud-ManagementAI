@@ -13,10 +13,18 @@
     "worker": "node src/workers/queueWorker.js"
   },
   "dependencies": {
+    "@aws-sdk/client-cloudformation": "^3.0.0",
+    "@aws-sdk/client-cost-explorer": "^3.0.0",
+    "@aws-sdk/client-ec2": "^3.0.0",
+    "@aws-sdk/client-ecs": "^3.0.0",
+    "@aws-sdk/client-lambda": "^3.0.0",
+    "@aws-sdk/client-rds": "^3.0.0",
+    "@aws-sdk/client-s3": "^3.0.0",
+    "@aws-sdk/client-sts": "^3.0.0",
+    "@azure/arm-costmanagement": "^1.0.0-beta.2",
     "@azure/arm-resources": "^5.2.0",
     "@azure/identity": "^4.13.1",
     "@google-cloud/resource-manager": "^4.1.4",
-    "aws-sdk": "^2.1509.0",
     "bcryptjs": "^2.4.3",
     "bullmq": "^5.56.4",
     "cors": "^2.8.5",
@@ -32,6 +40,8 @@
     "pg-hstore": "^2.3.4",
     "prom-client": "^15.1.0",
     "sequelize": "^6.37.8",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1",
     "umzug": "^3.8.2",
     "winston": "^3.11.0"
   },
@@ -46,7 +56,9 @@
     "coverageDirectory": "coverage",
     "collectCoverageFrom": [
       "src/**/*.js",
-      "!src/tests/**"
+      "!src/tests/**",
+      "!src/workers/**",
+      "!src/scripts/**"
     ]
   }
 }

@@ -40,14 +40,16 @@ const healthCheckProviders = async () => {
     const start = Date.now();
     try {
       if (provider === 'aws') {
-        const AWS = require('aws-sdk');
-        const sts = new AWS.STS({
-          accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-          secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-          sessionToken: process.env.AWS_SESSION_TOKEN,
+        const { STSClient, GetCallerIdentityCommand } = require('@aws-sdk/client-sts');
+        const stsClient = new STSClient({
           region: process.env.AWS_DEFAULT_REGION || 'us-east-1',
+          credentials: {
+            accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+            secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+            ...(process.env.AWS_SESSION_TOKEN && { sessionToken: process.env.AWS_SESSION_TOKEN }),
+          },
         });
-        await sts.getCallerIdentity().promise();
+        await stsClient.send(new GetCallerIdentityCommand({}));
       } else if (provider === 'azure') {
         const { ClientSecretCredential } = require('@azure/identity');
         const { ResourceManagementClient } = require('@azure/arm-resources');

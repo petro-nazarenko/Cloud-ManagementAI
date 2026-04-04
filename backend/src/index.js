@@ -23,6 +23,8 @@ const { shouldSeedDemoData, validateConfig } = require('./utils/config');
 const { seedAdmin } = require('./controllers/authController');
 const { seedResources } = require('./controllers/resourceController');
 const { seedRecommendations } = require('./services/recommendationEngine');
+const swaggerSpec = require('./utils/swagger');
+const swaggerUi = require('swagger-ui-express');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -112,6 +114,12 @@ app.use('/api/providers', providersRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/audit', auditRouter);
 app.use('/api/admin', adminRouter);
+
+// OpenAPI docs (disabled in test to keep test output clean)
+if (process.env.NODE_ENV !== 'test') {
+  app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, { explorer: true }));
+  app.get('/api/docs.json', (req, res) => res.json(swaggerSpec));
+}
 
 // 404 handler
 app.use((req, res) => {

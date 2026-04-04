@@ -1,9 +1,9 @@
 'use strict';
 
-const { buildCostsSnapshot } = require('../services/costService');
+const { fetchRealCosts } = require('../services/costService');
 
 const runCostSyncJob = async () => {
-  const snapshot = buildCostsSnapshot('30d');
+  const snapshot = await fetchRealCosts('30d');
   return {
     ...snapshot,
     refreshedAt: new Date().toISOString(),

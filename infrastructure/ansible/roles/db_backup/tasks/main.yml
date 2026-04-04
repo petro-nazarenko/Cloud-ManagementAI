@@ -1,0 +1,190 @@
+---
+# tasks/main.yml — Database backup and restore tasks for Cloud ManagementAI
+# Supports two tags:
+#   backup  — create a pg_dump and optionally sync to S3
+#   restore — restore from a local dump file
+
+- name: Ensure backup destination directory exists
+  ansible.builtin.file:
+    path: "{{ db_backup_dest }}"
+    state: directory
+    mode: "0750"
+    owner: root
+    group: root
+  tags: [backup, restore]
+
+# ── BACKUP ──────────────────────────────────────────────────────────────────
+
+- name: Set backup timestamp fact
+  ansible.builtin.set_fact:
+    _db_backup_ts: "{{ ansible_date_time.iso8601_basic_short }}"
+  tags: [backup]
+
+- name: Set backup file path
+  ansible.builtin.set_fact:
+    _db_dump_file: >-
+      {{ db_backup_dest }}/{{ db_backup_filename_prefix }}_{{ _db_backup_ts }}.sql
+    _db_dump_file_gz: >-
+      {{ db_backup_dest }}/{{ db_backup_filename_prefix }}_{{ _db_backup_ts }}.sql.gz
+  tags: [backup]
+
+- name: Create PostgreSQL dump
+  ansible.builtin.shell: >
+    PGPASSWORD="{{ db_password }}"
+    pg_dump
+    --host="{{ db_host }}"
+    --port="{{ db_port }}"
+    --username="{{ db_user }}"
+    --format=plain
+    --no-password
+    "{{ db_name }}"
+    > "{{ _db_dump_file }}"
+  environment:
+    PGPASSWORD: "{{ db_password }}"
+  register: _pg_dump_result
+  failed_when: _pg_dump_result.rc != 0
+  tags: [backup]
+
+- name: Compress dump with gzip
+  ansible.builtin.command: >
+    gzip --force "{{ _db_dump_file }}"
+  when: db_backup_compress | bool
+  tags: [backup]
+
+- name: Verify backup file exists and is non-empty
+  ansible.builtin.stat:
+    path: "{{ _db_dump_file_gz if db_backup_compress else _db_dump_file }}"
+  register: _backup_stat
+  tags: [backup]
+
+- name: Fail if backup file is empty
+  ansible.builtin.fail:
+    msg: "Backup file is empty or missing: {{ _backup_stat.stat.path }}"
+  when: not _backup_stat.stat.exists or _backup_stat.stat.size == 0
+  tags: [backup]
+
+- name: Show backup file info
+  ansible.builtin.debug:
+    msg: >
+      Backup created: {{ _backup_stat.stat.path }}
+      ({{ (_backup_stat.stat.size / 1024 / 1024) | round(2) }} MB)
+  tags: [backup]
+
+- name: Upload backup to S3
+  amazon.aws.s3_object:
+    bucket: "{{ db_backup_s3_bucket }}"
+    object: "{{ db_backup_s3_prefix }}/{{ _backup_stat.stat.path | basename }}"
+    src: "{{ _backup_stat.stat.path }}"
+    mode: put
+    region: "{{ db_backup_s3_region }}"
+  when: db_backup_s3_enabled | bool and db_backup_s3_bucket != ''
+  tags: [backup]
+
+- name: Remove local dump files older than retention period
+  ansible.builtin.find:
+    paths: "{{ db_backup_dest }}"
+    patterns:
+      - "{{ db_backup_filename_prefix }}_*.sql"
+      - "{{ db_backup_filename_prefix }}_*.sql.gz"
+    age: "{{ db_backup_retention_days }}d"
+    age_stamp: mtime
+  register: _old_backups
+  tags: [backup]
+
+- name: Delete old backup files
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ _old_backups.files }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+  tags: [backup]
+
+- name: Report how many old files were removed
+  ansible.builtin.debug:
+    msg: "Removed {{ _old_backups.files | length }} backup file(s) older than {{ db_backup_retention_days }} days."
+  tags: [backup]
+
+# ── RESTORE ─────────────────────────────────────────────────────────────────
+
+- name: Assert restore file is specified
+  ansible.builtin.assert:
+    that:
+      - db_restore_file | length > 0
+    fail_msg: "Set db_restore_file to the path of the dump file you want to restore."
+  tags: [restore]
+
+- name: Check restore file exists on control node
+  ansible.builtin.stat:
+    path: "{{ db_restore_file }}"
+  register: _restore_stat
+  delegate_to: localhost
+  tags: [restore]
+
+- name: Fail if restore file is missing
+  ansible.builtin.fail:
+    msg: "Restore file not found: {{ db_restore_file }}"
+  when: not _restore_stat.stat.exists
+  tags: [restore]
+
+- name: Copy restore file to target host
+  ansible.builtin.copy:
+    src: "{{ db_restore_file }}"
+    dest: "{{ db_backup_dest }}/restore_input{{ '.gz' if db_restore_file.endswith('.gz') else '' }}"
+    mode: "0640"
+  tags: [restore]
+
+- name: Decompress restore file if gzipped
+  ansible.builtin.command: >
+    gunzip --force
+    "{{ db_backup_dest }}/restore_input.gz"
+  when: db_restore_file.endswith('.gz')
+  tags: [restore]
+
+- name: Set resolved restore path
+  ansible.builtin.set_fact:
+    _resolved_restore_file: >-
+      {{ db_backup_dest }}/restore_input
+  tags: [restore]
+
+- name: Drop existing database tables (via pg_dump --clean)
+  # We use psql with the dump file that already contains DROP TABLE statements
+  # when generated with --clean flag. Simple approach: drop & recreate schema.
+  ansible.builtin.shell: >
+    PGPASSWORD="{{ db_password }}"
+    psql
+    --host="{{ db_host }}"
+    --port="{{ db_port }}"
+    --username="{{ db_user }}"
+    --dbname="{{ db_name }}"
+    --command="DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+  environment:
+    PGPASSWORD: "{{ db_password }}"
+  tags: [restore]
+
+- name: Restore database from dump
+  ansible.builtin.shell: >
+    PGPASSWORD="{{ db_password }}"
+    psql
+    --host="{{ db_host }}"
+    --port="{{ db_port }}"
+    --username="{{ db_user }}"
+    --dbname="{{ db_name }}"
+    --no-password
+    --file="{{ _resolved_restore_file }}"
+  environment:
+    PGPASSWORD: "{{ db_password }}"
+  register: _pg_restore_result
+  failed_when: _pg_restore_result.rc != 0
+  tags: [restore]
+
+- name: Clean up restore file from target host
+  ansible.builtin.file:
+    path: "{{ _resolved_restore_file }}"
+    state: absent
+  tags: [restore]
+
+- name: Restore complete
+  ansible.builtin.debug:
+    msg: "Database '{{ db_name }}' restored successfully from {{ db_restore_file | basename }}."
+  tags: [restore]

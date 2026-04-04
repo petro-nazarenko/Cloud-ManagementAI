@@ -1,0 +1,35 @@
+---
+# playbooks/db_backup.yml
+# ─────────────────────────────────────────────────────────────────────
+# Backup and restore Cloud ManagementAI PostgreSQL database.
+#
+# Usage:
+#   # Create a backup (all hosts in [db] group)
+#   ansible-playbook -i inventory/hosts.yml playbooks/db_backup.yml --tags backup
+#
+#   # Upload backup to S3 (set db_backup_s3_enabled=true in vars)
+#   ansible-playbook -i inventory/hosts.yml playbooks/db_backup.yml --tags backup \
+#     -e db_backup_s3_enabled=true -e db_backup_s3_bucket=my-company-backups
+#
+#   # Restore from a specific dump file
+#   ansible-playbook -i inventory/hosts.yml playbooks/db_backup.yml --tags restore \
+#     -e db_restore_file=/path/to/cloudmgmt_backup_20260404T0000.sql.gz
+#
+# The role reads DB connection details from environment variables by default;
+# override db_host, db_name, db_user, db_password in group_vars/all.yml or
+# pass them as extra vars.
+# ─────────────────────────────────────────────────────────────────────
+
+- name: Database Backup / Restore
+  hosts: db
+  become: true
+  gather_facts: true
+
+  vars:
+    # Override any db_backup_* variable from the role defaults here or via
+    # group_vars / host_vars / extra-vars (-e).
+    db_backup_dest: "/var/backups/cloudmgmt"
+    db_backup_retention_days: 30
+
+  roles:
+    - role: db_backup
