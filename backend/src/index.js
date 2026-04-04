@@ -13,6 +13,8 @@ const analyticsRouter = require('./routes/analytics');
 const authRouter = require('./routes/auth');
 const providersRouter = require('./routes/providers');
 const usersRouter = require('./routes/users');
+const auditRouter = require('./routes/audit');
+const adminRouter = require('./routes/admin');
 const errorHandler = require('./middleware/errorHandler');
 const metricsService = require('./services/metricsService');
 const logger = require('./utils/logger');
@@ -108,6 +110,8 @@ app.use('/api/resources', resourcesRouter);
 app.use('/api/analytics', analyticsRouter);
 app.use('/api/providers', providersRouter);
 app.use('/api/users', usersRouter);
+app.use('/api/audit', auditRouter);
+app.use('/api/admin', adminRouter);
 
 // 404 handler
 app.use((req, res) => {

@@ -8,6 +8,7 @@ import Resources from './pages/Resources';
 import Analytics from './pages/Analytics';
 import Providers from './pages/Providers';
 import Settings from './pages/Settings';
+import AuditLog from './pages/AuditLog';
 import Login from './pages/Login';
 
 const theme = createTheme({
@@ -88,6 +89,7 @@ function AppRoutes() {
         <Route path="resources" element={<Resources />} />
         <Route path="analytics" element={<Analytics />} />
         <Route path="providers" element={<Providers />} />
+        <Route path="audit" element={<AuditLog />} />
         <Route path="settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

@@ -95,4 +95,18 @@ export const usersAPI = {
   saveCloudCredentials: (provider, credentials) => api.post('/users/cloud-credentials', { provider, credentials }),
 };
 
+// ── Audit Logs ────────────────────────────────────────────────────────────────
+export const auditAPI = {
+  list: (params) => api.get('/audit', { params }),
+  get: (id) => api.get(`/audit/${id}`),
+};
+
+// ── Admin ─────────────────────────────────────────────────────────────────────
+export const adminAPI = {
+  listUsers: (params) => api.get('/admin/users', { params }),
+  getUser: (id) => api.get(`/admin/users/${id}`),
+  updateRole: (id, role) => api.patch(`/admin/users/${id}/role`, { role }),
+  deleteUser: (id) => api.delete(`/admin/users/${id}`),
+};
+
 export default api;

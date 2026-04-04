@@ -15,6 +15,7 @@ import MenuIcon from '@mui/icons-material/Menu';
 import LogoutIcon from '@mui/icons-material/Logout';
 import PersonIcon from '@mui/icons-material/Person';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import HistoryIcon from '@mui/icons-material/History';
 import { useAuth } from '../context/AuthContext';
 
 const DRAWER_WIDTH = 240;
@@ -25,6 +26,7 @@ const navItems = [
   { label: 'Resources', icon: <StorageIcon />, path: '/resources' },
   { label: 'Analytics', icon: <BarChartIcon />, path: '/analytics' },
   { label: 'Providers', icon: <CloudIcon />, path: '/providers' },
+  { label: 'Audit Log', icon: <HistoryIcon />, path: '/audit', roles: ['admin', 'operator'] },
   { label: 'Settings', icon: <SettingsIcon />, path: '/settings' },
 ];
 
@@ -99,7 +101,7 @@ export default function Layout() {
 
         {/* Nav Items */}
         <List sx={{ pt: 1, px: 1 }}>
-          {navItems.map((item) => {
+          {navItems.filter((item) => !item.roles || item.roles.includes(user?.role)).map((item) => {
             const active = isActive(item.path);
             return (
               <Tooltip key={item.path} title={collapsed ? item.label : ''} placement="right">

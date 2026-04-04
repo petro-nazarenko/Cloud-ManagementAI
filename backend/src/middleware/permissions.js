@@ -11,6 +11,9 @@ const PERMISSIONS = {
   analyticsRecommendationsWrite: 'analytics:recommendations:write',
   analyticsJobsRead: 'analytics:jobs:read',
   usersCloudCredentialsWrite: 'users:cloud-credentials:write',
+  auditLogsRead: 'audit:logs:read',
+  adminUsersRead: 'admin:users:read',
+  adminUsersWrite: 'admin:users:write',
 };
 
 const ROLE_PERMISSIONS = {
@@ -26,6 +29,7 @@ const ROLE_PERMISSIONS = {
     PERMISSIONS.analyticsRecommendationsWrite,
     PERMISSIONS.analyticsJobsRead,
     PERMISSIONS.usersCloudCredentialsWrite,
+    PERMISSIONS.auditLogsRead,
   ],
   viewer: [],
 };
