@@ -110,18 +110,35 @@ git clone https://github.com/petro-nazarenko/Cloud-ManagementAI.git
 cd Cloud-ManagementAI
 ```
 
-### 2. Configure environment variables
+### 2. Create the environment file
+
+Create a `.env` file in the project root. The application validates that secrets are non-default in production, so **do not reuse the example values**:
 
 ```bash
-cp backend/.env.example backend/.env
-cp frontend/.env.example frontend/.env
+cat > .env <<'EOF'
+# Database
+DB_NAME=cloudmgmt
+DB_USER=cloudmgmt_admin
+DB_PASSWORD=<strong-db-password>
+
+# Security
+JWT_SECRET=<64-char-hex-string>
+ENCRYPTION_KEY=<64-char-hex-string>
+
+# CORS (set to the URL where the frontend will be opened)
+CORS_ORIGIN=http://localhost:3000
+
+# API URL used by the frontend build (use /api for same-origin via nginx proxy)
+REACT_APP_API_URL=/api
+
+# Grafana
+GRAFANA_ADMIN_PASSWORD=<grafana-password>
+EOF
 ```
 
-Edit `backend/.env` and set at minimum:
-```env
-JWT_SECRET=your-strong-secret-key-here
-PORT=3001
-NODE_ENV=development
+Generate secure values:
+```bash
+openssl rand -hex 32   # use twice — once for JWT_SECRET, once for ENCRYPTION_KEY
 ```
 
 ### 3. Start the full stack with Docker Compose
@@ -134,11 +151,11 @@ This starts:
 | Service | URL |
 |---|---|
 | Frontend | http://localhost:3000 |
-| Backend API | http://localhost:3001 |
+| Backend API | http://localhost:3001 (also proxied via `/api` on port 3000) |
 | Backend Worker | background queue worker |
 | Redis | localhost:6379 |
 | Prometheus | http://localhost:9090 |
-| Grafana | http://localhost:3002 (admin/admin) |
+| Grafana | http://localhost:3002 |
 
 To stop: `docker-compose down`
 
@@ -185,11 +202,15 @@ All API endpoints are prefixed with `/api`.
 | POST | `/api/auth/login` | Login and receive JWT token |
 | POST | `/api/auth/refresh` | Refresh access token |
 
+A default admin account is seeded on first startup:
+- **Email:** `admin@example.com`
+- **Password:** `admin1234`
+
 **Login example:**
 ```bash
-curl -X POST http://localhost:3001/api/auth/login \
+curl -X POST http://localhost:3000/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"admin@example.com","password":"password123"}'
+  -d '{"email":"admin@example.com","password":"admin1234"}'
 ```
 
 ### Resources
@@ -370,7 +391,7 @@ The pre-provisioned dashboard (`monitoring/grafana/dashboards/cloud-management.j
 - Active Resources (CPU/Memory)
 - Cost Trend
 
-Access Grafana at http://localhost:3002 with credentials `admin/admin` (change on first login).
+Access Grafana at http://localhost:3002 with credentials `admin/<GRAFANA_ADMIN_PASSWORD>` (set in `.env`).
 
 ---
 
@@ -378,28 +399,28 @@ Access Grafana at http://localhost:3002 with credentials `admin/admin` (change o
 
 ### Backend (`backend/.env`)
 
-| Variable | Required | Description |
-|---|---|---|
-| `PORT` | No | Server port (default: 3001) |
-| `NODE_ENV` | No | `development` or `production` |
-| `JWT_SECRET` | **Yes** | Secret key for JWT signing |
-| `JWT_EXPIRES_IN` | No | Token expiry (default: 24h) |
-| `ALLOWED_ORIGINS` | No | Comma-separated CORS origins |
-| `AWS_ACCESS_KEY_ID` | No | AWS credentials |
-| `AWS_SECRET_ACCESS_KEY` | No | AWS credentials |
-| `AWS_REGION` | No | AWS region |
-| `AZURE_SUBSCRIPTION_ID` | No | Azure subscription |
-| `AZURE_TENANT_ID` | No | Azure tenant |
-| `AZURE_CLIENT_ID` | No | Azure service principal |
-| `AZURE_CLIENT_SECRET` | No | Azure service principal secret |
-| `GCP_PROJECT_ID` | No | GCP project ID |
-| `GOOGLE_APPLICATION_CREDENTIALS` | No | Path to GCP credentials JSON |
+All variables are set in the root `.env` file and picked up by Docker Compose.
 
-### Frontend (`frontend/.env`)
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `DB_NAME` | No | `cloudmgmt` | Postgres database name |
+| `DB_USER` | No | `cloudmgmt_admin` | Postgres user |
+| `DB_PASSWORD` | **Yes (prod)** | — | Postgres password (must not be `changeme` in production) |
+| `JWT_SECRET` | **Yes (prod)** | — | 256-bit hex secret for JWT signing |
+| `ENCRYPTION_KEY` | **Yes (prod)** | — | 64-char hex key for field encryption |
+| `CORS_ORIGIN` | **Yes (prod)** | — | Comma-separated allowed origins |
+| `REACT_APP_API_URL` | No | `/api` | API base URL baked into the frontend build |
+| `GRAFANA_ADMIN_PASSWORD` | No | `changeme` | Grafana admin password |
+| `AWS_ACCESS_KEY_ID` | No | — | AWS credentials |
+| `AWS_SECRET_ACCESS_KEY` | No | — | AWS credentials |
+| `AWS_DEFAULT_REGION` | No | `us-east-1` | AWS region |
+| `AZURE_SUBSCRIPTION_ID` | No | — | Azure subscription |
+| `AZURE_TENANT_ID` | No | — | Azure tenant |
+| `AZURE_CLIENT_ID` | No | — | Azure service principal |
+| `AZURE_CLIENT_SECRET` | No | — | Azure service principal secret |
+| `GOOGLE_APPLICATION_CREDENTIALS` | No | — | Path to GCP credentials JSON |
 
-| Variable | Required | Description |
-|---|---|---|
-| `REACT_APP_API_URL` | No | Backend base URL (default: http://localhost:3001) |
+> **Note:** `REACT_APP_API_URL=/api` is recommended — the nginx proxy on port 3000 forwards `/api/*` to the backend, avoiding CORS issues regardless of the deployment URL (local, Codespace, or custom domain).
 
 ---
 

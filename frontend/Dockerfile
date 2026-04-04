@@ -8,13 +8,13 @@ RUN npm install --legacy-peer-deps
 
 COPY . .
 
-ARG REACT_APP_API_URL=http://localhost:8000/api/v1
+ARG REACT_APP_API_URL=http://localhost:3001/api
 ENV REACT_APP_API_URL=$REACT_APP_API_URL
 
 RUN npm run build
 
 # ── Stage 2: Serve with nginx ─────────────────────────────────────────────────
-FROM nginx:1.25-alpine
+FROM nginx:1.25-alpine AS production
 
 COPY --from=build /app/build /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
