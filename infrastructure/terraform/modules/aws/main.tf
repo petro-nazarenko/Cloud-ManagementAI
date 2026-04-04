@@ -351,9 +351,9 @@ resource "aws_db_instance" "postgres" {
   backup_window           = "03:00-04:00"
   maintenance_window      = "sun:04:00-sun:05:00"
 
-  multi_az               = var.environment == "prod"
-  deletion_protection    = var.environment == "prod"
-  skip_final_snapshot    = var.environment != "prod"
+  multi_az                  = var.environment == "prod"
+  deletion_protection       = var.environment == "prod"
+  skip_final_snapshot       = var.environment != "prod"
   final_snapshot_identifier = var.environment == "prod" ? "${var.cluster_name}-final-snapshot" : null
 
   performance_insights_enabled = true

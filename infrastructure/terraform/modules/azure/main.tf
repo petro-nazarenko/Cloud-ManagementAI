@@ -139,17 +139,17 @@ resource "azurerm_kubernetes_cluster" "main" {
 # ─── Azure Database for PostgreSQL (Flexible Server) ─────────────────────────
 
 resource "azurerm_postgresql_flexible_server" "main" {
-  name                   = "${var.cluster_name}-postgres"
-  resource_group_name    = azurerm_resource_group.main.name
-  location               = azurerm_resource_group.main.location
-  version                = "15"
-  delegated_subnet_id    = azurerm_subnet.db.id
-  private_dns_zone_id    = azurerm_private_dns_zone.postgres.id
-  administrator_login    = var.db_username
-  administrator_password = var.db_password
-  storage_mb             = var.db_storage_mb
-  sku_name               = var.db_sku_name
-  backup_retention_days  = var.environment == "prod" ? 30 : 7
+  name                         = "${var.cluster_name}-postgres"
+  resource_group_name          = azurerm_resource_group.main.name
+  location                     = azurerm_resource_group.main.location
+  version                      = "15"
+  delegated_subnet_id          = azurerm_subnet.db.id
+  private_dns_zone_id          = azurerm_private_dns_zone.postgres.id
+  administrator_login          = var.db_username
+  administrator_password       = var.db_password
+  storage_mb                   = var.db_storage_mb
+  sku_name                     = var.db_sku_name
+  backup_retention_days        = var.environment == "prod" ? 30 : 7
   geo_redundant_backup_enabled = var.environment == "prod"
 
   high_availability {

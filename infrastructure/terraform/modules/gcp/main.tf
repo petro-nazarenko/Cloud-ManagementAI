@@ -126,10 +126,10 @@ resource "google_container_cluster" "main" {
 }
 
 resource "google_container_node_pool" "main" {
-  name       = "${var.cluster_name}-node-pool"
-  location   = google_container_cluster.main.location
-  cluster    = google_container_cluster.main.name
-  project    = var.project_id
+  name     = "${var.cluster_name}-node-pool"
+  location = google_container_cluster.main.location
+  cluster  = google_container_cluster.main.name
+  project  = var.project_id
 
   initial_node_count = var.node_count
 
