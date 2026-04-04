@@ -46,7 +46,7 @@ describe('Login page', () => {
     fireEvent.change(emailInput, { target: { value: '' } });
     fireEvent.click(screen.getByRole('button', { name: /sign in/i }));
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toBeInTheDocument();
+      expect(screen.getByText(/please enter your email and password/i)).toBeInTheDocument();
     });
   });
 

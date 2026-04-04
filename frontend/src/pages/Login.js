@@ -156,7 +156,7 @@ export default function Login() {
                 <Typography variant="caption" color="text.secondary">Demo credentials</Typography>
               </Divider>
 
-              <Alert severity="info" sx={{ fontSize: 12 }}>
+              <Alert severity="info" role="status" sx={{ fontSize: 12 }}>
                 Demo credentials: <strong>admin@example.com</strong> / <strong>admin1234</strong>
               </Alert>
             </Box>
