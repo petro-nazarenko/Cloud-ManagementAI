@@ -16,7 +16,7 @@ const { JOB_NAMES } = require('../queue/jobNames');
  */
 const getCosts = async (req, res, next) => {
   try {
-  const { period = '30d', provider } = req.query;
+    const { period = '30d', provider } = req.query;
 
     const cached = await getLatestJobResult(JOB_NAMES.costSync);
     if (cached) {
