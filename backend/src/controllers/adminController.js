@@ -21,8 +21,8 @@ const listUsers = async (req, res, next) => {
     if (req.query.role) where.role = req.query.role;
     if (req.query.search) {
       where[Op.or] = [
-        { name:  { [Op.iLike]: `%${req.query.search}%` } },
-        { email: { [Op.iLike]: `%${req.query.search}%` } },
+        { name:  { [Op.like]: `%${req.query.search}%` } },
+        { email: { [Op.like]: `%${req.query.search}%` } },
       ];
     }
 

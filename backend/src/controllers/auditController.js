@@ -19,7 +19,7 @@ const listAuditLogs = async (req, res, next) => {
     const where = {};
 
     if (req.query.userId)    where.userId    = req.query.userId;
-    if (req.query.userEmail) where.userEmail = { [Op.iLike]: `%${req.query.userEmail}%` };
+    if (req.query.userEmail) where.userEmail = { [Op.like]: `%${req.query.userEmail}%` };
     if (req.query.action)    where.action    = req.query.action;
     if (req.query.resource)  where.resource  = req.query.resource;
     if (req.query.resourceId) where.resourceId = req.query.resourceId;

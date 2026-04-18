@@ -1,12 +1,15 @@
 'use strict';
 
 const PERMISSIONS = {
+  resourcesRead: 'resources:read',
   resourcesWrite: 'resources:write',
   resourcesDelete: 'resources:delete',
   providersDeploy: 'providers:deploy',
   providersHealthRead: 'providers:health:read',
   providersHealthRefresh: 'providers:health:refresh',
+  analyticsCostsRead: 'analytics:costs:read',
   analyticsCostsRefresh: 'analytics:costs:refresh',
+  analyticsRecommendationsRead: 'analytics:recommendations:read',
   analyticsRecommendationsRefresh: 'analytics:recommendations:refresh',
   analyticsRecommendationsWrite: 'analytics:recommendations:write',
   analyticsJobsRead: 'analytics:jobs:read',
@@ -19,12 +22,15 @@ const PERMISSIONS = {
 const ROLE_PERMISSIONS = {
   admin: Object.values(PERMISSIONS),
   operator: [
+    PERMISSIONS.resourcesRead,
     PERMISSIONS.resourcesWrite,
     PERMISSIONS.resourcesDelete,
     PERMISSIONS.providersDeploy,
     PERMISSIONS.providersHealthRead,
     PERMISSIONS.providersHealthRefresh,
+    PERMISSIONS.analyticsCostsRead,
     PERMISSIONS.analyticsCostsRefresh,
+    PERMISSIONS.analyticsRecommendationsRead,
     PERMISSIONS.analyticsRecommendationsRefresh,
     PERMISSIONS.analyticsRecommendationsWrite,
     PERMISSIONS.analyticsJobsRead,
@@ -32,7 +38,10 @@ const ROLE_PERMISSIONS = {
     PERMISSIONS.auditLogsRead,
   ],
   viewer: [
+    PERMISSIONS.resourcesRead,
     PERMISSIONS.providersHealthRead,
+    PERMISSIONS.analyticsCostsRead,
+    PERMISSIONS.analyticsRecommendationsRead,
     PERMISSIONS.analyticsJobsRead,
   ],
 };
